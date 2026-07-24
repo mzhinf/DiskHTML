@@ -148,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
                 export_scan(database, scan_id, output / "report")
                 report_seconds = perf_counter() - started
                 database.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                problems = database.project_check()
+                if problems:
+                    raise RuntimeError(f"基准项目自校验失败：{'；'.join(problems)}")
             finally:
                 peak_working_set = sampler.stop()
 
@@ -179,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                 "report_bytes": _path_size(output / "report"),
             },
             "memory": {"peak_working_set_bytes": peak_working_set},
+            "validation": {"project_check": "ok"},
         }
         result_path = output / "result.json"
         result_path.write_text(

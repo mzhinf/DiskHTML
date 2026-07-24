@@ -47,3 +47,4 @@ class BenchmarkScriptTests(TestCase):
         self.assertGreater(result["storage"]["database_bytes"], 0)
         self.assertGreater(result["storage"]["report_bytes"], 0)
         self.assertIsNotNone(result["memory"]["peak_working_set_bytes"])
+        self.assertEqual(result["validation"]["project_check"], "ok")

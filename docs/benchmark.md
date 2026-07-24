@@ -19,6 +19,7 @@ HDD 和 SSD 应分别选择相同的数据集、不同的输出目录执行。HD
 - \`memory.peak_working_set_bytes\`：扫描和报告导出期间当前进程的 Windows 峰值工作集。
 - \`storage.database_bytes\` 与 \`storage.report_bytes\`：数据库和离线报告的实际磁盘占用。
 - \`scan.seconds\` 与 \`report.seconds\`：扫描及报告生成耗时。
+- `validation.project_check`：仅当项目自校验通过时为 `ok`；若校验失败，脚本会报错且不写入可用结果。
 
 ## 建议测试集
 
