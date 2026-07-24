@@ -9,7 +9,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QItemSelectionModel
-from PyQt6.QtWidgets import QApplication, QTableWidget
+from PyQt6.QtWidgets import QApplication, QComboBox, QTableWidget
 
 from diskhtml.database import Database
 from diskhtml.models import ScanProgress, ScanStatus
@@ -143,4 +143,31 @@ class UiTests(TestCase):
             self.assertEqual(thread_class.call_args.args[0], path)
             self.assertEqual(set(thread_class.call_args.args[1:]), {left_id, right_id})
             thread_class.return_value.start.assert_called_once_with()
+            window.close()
+
+    def test_show_last_compare_filters_persisted_entries(self) -> None:
+        """比较结果对话框应显示并按状态筛选持久化条目。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            with Database(path) as database:
+                compare_id = database.create_compare("scan:left", "scan:right")
+                database.set_compare_status(compare_id, "RUNNING")
+                database.record_compare_entry(
+                    compare_id, {"relative_path": "added.txt", "status": "ADDED"}
+                )
+                database.record_compare_entry(
+                    compare_id, {"relative_path": "same.txt", "status": "MATCH"}
+                )
+                database.set_compare_status(compare_id, "COMPLETED", {"ADDED": 1, "MATCH": 1}, True)
+            window = MainWindow(path)
+            window._last_compare_id = compare_id
+            with patch("diskhtml.ui.QDialog.exec", return_value=0):
+                window.show_last_compare()
+            table = window._compare_dialog.findChild(QTableWidget, "compare_result_table")
+            filter_box = window._compare_dialog.findChild(QComboBox, "compare_status_filter")
+            self.assertEqual(table.rowCount(), 2)
+            filter_box.setCurrentText("ADDED")
+            self.assertFalse(table.isRowHidden(0))
+            self.assertTrue(table.isRowHidden(1))
             window.close()

@@ -10,6 +10,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QDialog,
     QFileDialog,
     QMainWindow,
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
         self.resize(900, 500)
         self._database_path: Path | None = None
         self._scan_config = ScanConfig()
+        self._last_compare_id: str | None = None
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(["标识", "状态", "源路径", "已 Hash", "完成时间"])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -146,6 +148,9 @@ class MainWindow(QMainWindow):
         compare_button = QPushButton("比较选中", self)
         compare_button.clicked.connect(self.compare_selected_scans)
         toolbar.addWidget(compare_button)
+        compare_result_button = QPushButton("查看比较", self)
+        compare_result_button.clicked.connect(self.show_last_compare)
+        toolbar.addWidget(compare_result_button)
         if database_path is not None:
             self.load_project(database_path)
 
@@ -299,9 +304,47 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("比较正在后台运行。")
         self._compare_thread.start()
 
+    def show_last_compare(self) -> None:
+        """展示最近完成比较任务的明细，并按状态筛选。"""
+
+        if self._database_path is None or self._last_compare_id is None:
+            self.statusBar().showMessage("请先完成一次比较。", 5_000)
+            return
+        with Database.open_existing(self._database_path) as database:
+            entries = [
+                dict(entry) for entry in database.iter_compare_entries(self._last_compare_id)
+            ]
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"比较结果：{self._last_compare_id}")
+        dialog.resize(900, 420)
+        layout = QVBoxLayout(dialog)
+        filter_box = QComboBox(dialog)
+        filter_box.setObjectName("compare_status_filter")
+        statuses = sorted({str(entry["status"]) for entry in entries})
+        filter_box.addItems(["全部", *statuses])
+        table = QTableWidget(len(entries), 3, dialog)
+        table.setObjectName("compare_result_table")
+        table.setHorizontalHeaderLabels(["路径", "状态", "差异说明"])
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        for row, entry in enumerate(entries):
+            values = [entry["relative_path"], entry["status"], entry["error_message"] or ""]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+
+        def apply_filter(status: str) -> None:
+            for row in range(table.rowCount()):
+                table.setRowHidden(row, status != "全部" and table.item(row, 1).text() != status)
+
+        filter_box.currentTextChanged.connect(apply_filter)
+        layout.addWidget(filter_box)
+        layout.addWidget(table)
+        self._compare_dialog = dialog
+        dialog.exec()
+
     def _compare_completed(self, compare_id: str) -> None:
         """显示后台比较完成提示。"""
 
+        self._last_compare_id = compare_id
         self.statusBar().showMessage(f"比较已完成：{compare_id}", 10_000)
 
     def _compare_failed(self, message: str) -> None:
