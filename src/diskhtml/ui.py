@@ -62,6 +62,9 @@ class MainWindow(QMainWindow):
         create_button = QPushButton("新建项目", self)
         create_button.clicked.connect(self.create_project)
         toolbar.addWidget(create_button)
+        scan_button = QPushButton("扫描路径", self)
+        scan_button.clicked.connect(self.start_scan)
+        toolbar.addWidget(scan_button)
         refresh_button = QPushButton("刷新", self)
         refresh_button.clicked.connect(self.refresh_project)
         toolbar.addWidget(refresh_button)
@@ -91,6 +94,35 @@ class MainWindow(QMainWindow):
         )
         if filename:
             self.load_project(Path(filename))
+
+    def start_scan(self) -> None:
+        """选择目录后在后台启动扫描。"""
+
+        if self._database_path is None:
+            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
+            return
+        source = QFileDialog.getExistingDirectory(self, "选择扫描目录")
+        if not source:
+            return
+        if hasattr(self, "_scan_thread") and self._scan_thread.isRunning():
+            self.statusBar().showMessage("已有扫描正在运行。", 5_000)
+            return
+        self._scan_thread = ScanThread(self._database_path, Path(source))
+        self._scan_thread.completed.connect(self._scan_completed)
+        self._scan_thread.failed.connect(self._scan_failed)
+        self.statusBar().showMessage("扫描正在后台运行。")
+        self._scan_thread.start()
+
+    def _scan_completed(self, scan_id: str) -> None:
+        """接收后台扫描完成信号并刷新任务列表。"""
+
+        self.refresh_project()
+        self.statusBar().showMessage(f"扫描已完成：{scan_id}", 10_000)
+
+    def _scan_failed(self, message: str) -> None:
+        """显示后台扫描失败的中文原因。"""
+
+        self.statusBar().showMessage(f"扫描失败：{message}", 10_000)
 
     def refresh_project(self) -> None:
         """重新读取当前项目，供后台任务完成后更新列表。"""
