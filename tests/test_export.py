@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from diskhtml.database import Database
 from diskhtml.models import ScanStatus
 from diskhtml.report import export_scan
+from diskhtml.report.exporter import _publish_directory
 
 
 class ExportTests(TestCase):
@@ -64,6 +66,26 @@ class ExportTests(TestCase):
                 destination = export_scan(database, scan_id, root / "report")
                 with self.assertRaises(FileExistsError):
                     export_scan(database, scan_id, destination)
+
+    def test_publish_directory_retries_transient_windows_lock(self) -> None:
+        """原子发布遇到短暂的 Windows 文件锁时应等待后重试。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            temporary = root / "temporary"
+            destination = root / "report"
+            temporary.mkdir()
+            with (
+                patch(
+                    "diskhtml.report.exporter.os.replace",
+                    side_effect=[PermissionError("模拟文件锁"), None],
+                ) as replace,
+                patch("diskhtml.report.exporter.time.sleep") as sleep,
+            ):
+                _publish_directory(temporary, destination)
+
+        self.assertEqual(replace.call_count, 2)
+        sleep.assert_called_once_with(0.05)
 
     @staticmethod
     def _completed_scan(database: Database) -> str:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import shutil
 import uuid
 from collections.abc import Iterator
@@ -14,7 +13,7 @@ from typing import Any
 from ..database import Database
 from ..models import CompareStatus
 from ..util import utc_now
-from .exporter import _row_to_dict, _write_csv, _write_json
+from .exporter import _publish_directory, _row_to_dict, _write_csv, _write_json
 
 COMPARE_REPORT_FORMAT_VERSION = 1
 _COMPARE_COLUMNS = (
@@ -45,7 +44,7 @@ def export_compare(database: Database, compare_id: str, output_path: Path | str)
     try:
         temporary.mkdir()
         _write_compare_export(database, compare_id, temporary)
-        os.replace(temporary, destination)
+        _publish_directory(temporary, destination)
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
