@@ -1,77 +1,68 @@
-# 用户操作手册
+# 用户指南
 
-## 准备
+## 日常使用：生成 HTML 冷备
 
-项目使用 Python 3.12 及项目虚拟环境。开发或命令行使用时，先安装依赖：
-
-~~~powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-~~~
-
-图形界面可通过以下命令启动：
+冷备的交付物是一个可直接双击打开的 HTML 文件，类似 Snap2HTML。扫描期间会使用临时 SQLite 索引来保证 Hash、排序和错误记录可靠；成功后临时索引会自动清理，不会出现在冷备目录中。
 
 ~~~powershell
-diskhtml-gui
+diskhtml backup D:\资料 .\资料冷备.html
 ~~~
 
-每个项目对应一个 SQLite 数据库。请将数据库与被校验的数据分开存放，并定期复制数据库文件作为项目元数据备份。
+也可以扫描单个文件：
 
-## 新建、打开与自检项目
+~~~powershell
+diskhtml backup D:\资料\重要文件.zip .\重要文件冷备.html
+~~~
 
-在图形界面中使用“新建项目”选择新的数据库路径，或用“打开项目”选择已有数据库。命令行可执行：
+可用选项：
+
+~~~powershell
+diskhtml backup D:\资料 .\资料冷备.html --workers 2 --queue-size 32 --sha512
+~~~
+
+输出文件必须是一个不存在的 .html 文件。程序拒绝覆盖已有冷备，以避免误删历史快照。
+
+完成后直接用浏览器打开 HTML。页面显示文件和目录数量、已完成 Hash 数、问题数；可按路径、状态或错误信息筛选，单击条目查看 SHA256、时间和错误详情。列表每次只渲染部分行，可继续点击“显示更多”。
+
+## 比较两个冷备
+
+先分别生成旧副本和新副本的 HTML 冷备，再执行比较：
+
+~~~powershell
+diskhtml compare-html .\旧副本.html .\新副本.html .\副本比较.html
+~~~
+
+比较结果也是单个 HTML，可直接发送或归档。报告可按以下状态筛选：
+
+- MATCH：两侧 SHA256 都有效且相同；
+- CHANGED：路径相同但 SHA256 不同；
+- ADDED：仅存在于新快照；
+- MISSING：仅存在于旧快照；
+- ERROR：任一侧 Hash 不可用、读取失败或扫描期间不稳定，不能作为一致性依据。
+
+左侧始终视为旧快照，右侧视为新快照。
+
+## 保存和迁移
+
+请保留完整的 .html 文件本身，不需要附带 SQLite 或网络资源。HTML 内含可视化界面和快照数据，复制到其他 Windows 电脑后仍可离线打开和比较。
+
+单文件 HTML 会包含完整文件清单。超大目录的快照可能较大，浏览器打开时会占用相应内存；这种情况下建议使用现代 64 位浏览器，并避免同时打开多个超大快照。
+
+## 图形界面和高级项目
+
+图形界面的“打开报告”可打开任意冷备或比较 HTML。现有 SQLite 项目工作流仍保留给需要中断恢复、检查既有项目或导出旧式目录报告的高级场景：
 
 ~~~powershell
 diskhtml init-db .\archive.sqlite3
-diskhtml check-db .\archive.sqlite3
-diskhtml check-project .\archive.sqlite3
-~~~
-
-“check-db”验证 SQLite 文件完整性；“check-project”还会检查模式版本、迁移记录、引用关系、状态值和扫描进度计数。任何检查失败时都不应继续把该项目作为唯一恢复依据，应先保留副本并排查问题。
-
-## 扫描与恢复
-
-图形界面支持选择目录或单个文件，加载 TOML 扫描配置，并显示已发现文件数、已 Hash 字节数、吞吐、预计剩余时间和当前路径。扫描中可暂停或取消；已完整提交的文件结果会保留。
-
-命令行等价操作如下：
-
-~~~powershell
-diskhtml scan .\archive.sqlite3 D:\资料 --workers 2 --queue-size 32
-diskhtml status .\archive.sqlite3
+diskhtml scan .\archive.sqlite3 D:\资料
 diskhtml resume .\archive.sqlite3 <扫描标识>
 ~~~
 
-恢复只复用大小和纳秒修改时间均未变化、且 Hash 状态为 OK 的记录。权限不足、文件消失或扫描中发生变化都会被记录为错误，而不是静默跳过。恢复前应确认原始源路径仍可访问。
+日常冷备和比较不需要使用这些命令。
 
-## 比较和复验
-
-可在图形界面中比较两个已完成快照，也可将当前目录与一个已完成快照比较。命令行可直接比较两个当前路径，或复验当前副本：
+## 开发环境
 
 ~~~powershell
-diskhtml compare .\archive.sqlite3 D:\旧副本 E:\新副本
-diskhtml verify .\archive.sqlite3 <历史扫描标识> E:\当前副本
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ~~~
-
-比较以 SHA256 为最终依据。MATCH 表示两侧均有可信且相同的 SHA256；任何一侧 Hash 错误、Hash 不稳定或摘要缺失都会显示为 ERROR。
-
-## 导出离线报告
-
-只允许导出已完成扫描或已完成比较。导出目标目录必须不存在，程序不会覆盖已有目录。
-
-~~~powershell
-diskhtml export .\archive.sqlite3 <扫描标识> .\扫描报告
-diskhtml export .\archive.sqlite3 <比较标识> .\比较报告 --compare
-~~~
-
-扫描报告入口是“扫描报告\report.html”，比较报告入口是“比较报告\compare_report.html”。报告不依赖网络，应用会在写入完成后以原子目录发布；Windows 短暂文件锁会有限重试。请直接用浏览器打开本地文件，并保留完整报告目录，不要仅移动 HTML 文件。
-
-## 导入与备份
-
-可将已存在项目数据库导入新路径：
-
-~~~powershell
-diskhtml import .\新项目.sqlite3 .\已有项目.sqlite3
-~~~
-
-导入源和目标不得相同。发布或迁移前应先复制源数据库，在副本上执行导入及“check-project”，并保留原始数据库直至人工验收结束。
-
-更多格式与恢复细节见“数据格式说明”“数据库迁移说明”“恢复说明”和“性能基准”文档。

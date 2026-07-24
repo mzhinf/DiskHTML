@@ -72,6 +72,38 @@ class CliTests(TestCase):
             self.assertIn("项目数据库已导入", self._run(["import", str(imported), str(database)]))
             self.assertIn("检查：ok", self._run(["check-db", str(imported)]))
 
+    def test_cli_backup_and_compare_html(self) -> None:
+        """CLI 默认冷备流程应直接生成可视化 HTML，并可比较两个快照。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            old_source = root / "old"
+            new_source = root / "new"
+            old_source.mkdir()
+            new_source.mkdir()
+            (old_source / "same.txt").write_text("相同", encoding="utf-8")
+            (new_source / "same.txt").write_text("相同", encoding="utf-8")
+            (new_source / "added.txt").write_text("新增", encoding="utf-8")
+            old_archive = root / "old.html"
+            new_archive = root / "new.html"
+            comparison = root / "comparison.html"
+
+            self.assertIn(
+                "HTML 冷备快照已生成", self._run(["backup", str(old_source), str(old_archive)])
+            )
+            self.assertIn(
+                "HTML 冷备快照已生成", self._run(["backup", str(new_source), str(new_archive)])
+            )
+            self.assertIn(
+                "HTML 比较报告已生成",
+                self._run(["compare-html", str(old_archive), str(new_archive), str(comparison)]),
+            )
+
+            self.assertTrue(old_archive.is_file())
+            self.assertTrue(new_archive.is_file())
+            self.assertTrue(comparison.is_file())
+            self.assertIn('data-status="ADDED"', comparison.read_text(encoding="utf-8"))
+
     def _run(self, argv: list[str]) -> str:
         """运行一条 CLI 命令并返回去除末尾换行的标准输出。"""
 

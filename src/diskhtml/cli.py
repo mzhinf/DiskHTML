@@ -13,6 +13,7 @@ from . import __version__
 from .compare import compare_scans, compare_sources
 from .config import ScanConfig, load_config
 from .database import Database
+from .html_archive import compare_html_archives, create_html_backup
 from .logging_config import configure_logging
 from .report import export_compare, export_scan
 from .scanner import Scanner
@@ -70,6 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
     scan_parser.add_argument("source", type=Path, help="扫描源路径")
     _add_scan_options(scan_parser)
+    backup_parser = subparsers.add_parser("backup", help="扫描目录或文件并生成单文件 HTML 冷备")
+    backup_parser.add_argument("source", type=Path, help="扫描源路径")
+    backup_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
+    _add_scan_options(backup_parser)
+
+    compare_html_parser = subparsers.add_parser(
+        "compare-html", help="比较两个 HTML 冷备快照并生成单文件 HTML 报告"
+    )
+    compare_html_parser.add_argument("left", type=Path, help="左侧旧冷备快照 .html")
+    compare_html_parser.add_argument("right", type=Path, help="右侧新冷备快照 .html")
+    compare_html_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
 
     resume_parser = subparsers.add_parser("resume", help="恢复未完成扫描")
     resume_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
@@ -124,6 +136,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         configure_logging(config.log_level, config.json_log)
+        if args.command == "backup":
+            output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
+            print(f"HTML 冷备快照已生成：{output}")
+            return 0
+        if args.command == "compare-html":
+            output = compare_html_archives(args.left, args.right, args.output)
+            print(f"HTML 比较报告已生成：{output}")
+            return 0
         database = Database(args.database)
         try:
             if args.command == "init-db":
