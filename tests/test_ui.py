@@ -190,3 +190,25 @@ class UiTests(TestCase):
             self.assertEqual(thread_class.call_args.args[:2], (path, source))
             thread_class.return_value.start.assert_called_once_with()
             window.close()
+
+    def test_compare_directory_to_selected_scan_starts_background_thread(self) -> None:
+        """选择历史快照与当前目录后应创建后台比较线程。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            source = Path(directory) / "current"
+            source.mkdir()
+            with Database(path) as database:
+                scan_id = database.create_scan("DIRECTORY", "C:/history", {})
+                database.set_scan_status(scan_id, ScanStatus.SCANNING)
+                database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
+            window = MainWindow(path)
+            window._table.selectRow(0)
+            with (
+                patch("diskhtml.ui.QFileDialog.getExistingDirectory", return_value=str(source)),
+                patch("diskhtml.ui.CompareSourceThread") as thread_class,
+            ):
+                window.compare_directory_to_selected_scan()
+            self.assertEqual(thread_class.call_args.args[:3], (path, source, scan_id))
+            thread_class.return_value.start.assert_called_once_with()
+            window.close()

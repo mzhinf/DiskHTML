@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .compare import compare_scans
+from .compare import compare_scans, compare_source_to_scan
 from .config import ScanConfig, load_config
 from .database import Database
 from .models import ScanProgress
@@ -90,6 +90,35 @@ class CompareThread(QThread):
             self.failed.emit(str(exc))
 
 
+class CompareSourceThread(QThread):
+    """在后台扫描当前目录并与已完成快照比较。"""
+
+    completed = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self, database_path: Path, source: Path, historical_scan_id: str, config: ScanConfig
+    ):
+        super().__init__()
+        self.database_path = database_path
+        self.source = source
+        self.historical_scan_id = historical_scan_id
+        self.config = config
+
+    def run(self) -> None:
+        """调用当前路径与历史快照的比较服务。"""
+
+        try:
+            with Database(self.database_path) as database:
+                self.completed.emit(
+                    compare_source_to_scan(
+                        database, str(self.source), self.historical_scan_id, self.config
+                    )
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     """展示项目扫描快照的非阻塞 GUI 主窗口。"""
 
@@ -151,6 +180,9 @@ class MainWindow(QMainWindow):
         compare_button = QPushButton("比较选中", self)
         compare_button.clicked.connect(self.compare_selected_scans)
         toolbar.addWidget(compare_button)
+        directory_compare_button = QPushButton("比较目录", self)
+        directory_compare_button.clicked.connect(self.compare_directory_to_selected_scan)
+        toolbar.addWidget(directory_compare_button)
         compare_result_button = QPushButton("查看比较", self)
         compare_result_button.clicked.connect(self.show_last_compare)
         toolbar.addWidget(compare_result_button)
@@ -354,6 +386,35 @@ class MainWindow(QMainWindow):
         layout.addWidget(table)
         self._compare_dialog = dialog
         dialog.exec()
+
+    def compare_directory_to_selected_scan(self) -> None:
+        """选择当前目录并与一个已完成历史快照在后台比较。"""
+
+        if self._database_path is None:
+            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
+            return
+        selected = [index.data() for index in self._table.selectionModel().selectedRows(0)]
+        if len(selected) != 1:
+            self.statusBar().showMessage("请选择一个已完成扫描作为历史快照。", 5_000)
+            return
+        with Database.open_existing(self._database_path) as database:
+            scan = database.get_scan(selected[0])
+        if scan is None or scan["status"] != "COMPLETED":
+            self.statusBar().showMessage("只能与已完成的历史扫描进行目录比较。", 5_000)
+            return
+        source = QFileDialog.getExistingDirectory(self, "选择当前比较目录")
+        if not source:
+            return
+        if hasattr(self, "_compare_thread") and self._compare_thread.isRunning():
+            self.statusBar().showMessage("已有比较正在运行。", 5_000)
+            return
+        self._compare_thread = CompareSourceThread(
+            self._database_path, Path(source), selected[0], self._scan_config
+        )
+        self._compare_thread.completed.connect(self._compare_completed)
+        self._compare_thread.failed.connect(self._compare_failed)
+        self.statusBar().showMessage("目录比较正在后台运行。")
+        self._compare_thread.start()
 
     def _compare_completed(self, compare_id: str) -> None:
         """显示后台比较完成提示。"""
