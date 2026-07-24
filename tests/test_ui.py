@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import monotonic
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -211,4 +212,30 @@ class UiTests(TestCase):
                 window.compare_directory_to_selected_scan()
             self.assertEqual(thread_class.call_args.args[:3], (path, source, scan_id))
             thread_class.return_value.start.assert_called_once_with()
+            window.close()
+
+    def test_directory_scan_completes_through_background_thread(self) -> None:
+        """窗口启动目录扫描后应由后台线程完成并刷新持久化快照。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "sample.txt").write_text("内容", encoding="utf-8")
+            path = root / "archive.sqlite3"
+            with Database(path):
+                pass
+            window = MainWindow(path)
+            with patch("diskhtml.ui.QFileDialog.getExistingDirectory", return_value=str(source)):
+                window.start_scan()
+            deadline = monotonic() + 10
+            while window._scan_thread.isRunning() and monotonic() < deadline:
+                self.application.processEvents()
+                window._scan_thread.wait(50)
+            self.assertFalse(window._scan_thread.isRunning())
+            self.application.processEvents()
+            with Database.open_existing(path) as database:
+                scan = next(database.iter_scans())
+            self.assertEqual(scan["status"], "COMPLETED")
+            self.assertEqual(window._table.rowCount(), 1)
             window.close()
