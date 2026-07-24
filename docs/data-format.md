@@ -30,3 +30,12 @@
 
 默认文本日志字段依次为时间、级别、记录器和中文消息。启用 JSON 后，每行是一个对象，
 稳定字段为 `timestamp`、`level`、`logger`、`message`，异常时增加 `exception`。
+
+## 报告导出格式
+
+- 报告格式版本为 `1`，写入 `summary.json.format_version`；导出只接受状态为 `COMPLETED` 的扫描快照。
+- 根目录包含 `disk_info.json`、`summary.json`、带 UTF-8 BOM 的 `file_list.csv` 与 `hash_list.csv`，以及固定入口 `report.html`。
+- `report_assets/manifest.js` 只保存统计和分片清单；文件明细位于 `report_assets/shards/*.js`，按相对路径的顶级目录分片。
+- 浏览器选择一个分片后，才通过本地 `<script>` 标签载入该分片并在内存构建该分片的目录树；首屏不嵌入全量文件。
+- 所有样式、脚本和分片均为相对本地资源，不使用 CDN、`fetch` 或网络服务，因此可由 `file://` 直接打开。
+- 导出先写入目标同级的隐藏临时目录，全部写入成功后使用原子改名发布；目标目录已存在时拒绝覆盖。
