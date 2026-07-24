@@ -21,6 +21,7 @@ class ScanConfig:
     exclude_dirs: tuple[str, ...] = field(default_factory=tuple)
     exclude_extensions: tuple[str, ...] = field(default_factory=tuple)
     sha512: bool = False
+    follow_links: bool = False
     retry_count: int = 1
 
     def __post_init__(self) -> None:
@@ -81,6 +82,7 @@ def _parse_config(raw: dict[str, Any]) -> AppConfig:
         exclude_dirs=tuple(str(item) for item in scan_values.get("exclude_dirs", [])),
         exclude_extensions=tuple(str(item) for item in scan_values.get("exclude_extensions", [])),
         sha512=bool(scan_values.get("sha512", False)),
+        follow_links=bool(scan_values.get("follow_links", False)),
         retry_count=int(scan_values.get("retry_count", 1)),
     )
     return AppConfig(

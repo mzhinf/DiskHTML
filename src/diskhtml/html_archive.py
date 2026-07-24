@@ -65,21 +65,18 @@ def render_html_from_sqlite(database_path: Path | str, output_path: Path | str) 
 def compare_html_archives(
     left_path: Path | str, right_path: Path | str, output_path: Path | str
 ) -> Path:
-    """兼容比较两个 HTML 冷备快照，并生成单文件 HTML 报告。"""
+    """?????? HTML 按名称、摘要或状态筛选 HTML ???"""
 
     destination = _prepare_destination(output_path)
     left = read_html_backup(left_path)
     right = read_html_backup(right_path)
-    _write_archive(
-        destination,
-        _compare_payload(
-            left,
-            right,
-            _snapshot_identity(left, left_path),
-            _snapshot_identity(right, right_path),
-        ),
-        _compare_document(),
+    payload = _compare_payload(
+        left,
+        right,
+        _snapshot_identity(left, left_path),
+        _snapshot_identity(right, right_path),
     )
+    _write_archive(destination, payload, _compare_document(payload))
     return destination
 
 
@@ -92,7 +89,7 @@ def compare_html_directory_to_source(
     progress_callback: Callable[[ScanProgress], None] | None = None,
     controller: ScanController | None = None,
 ) -> Path:
-    """将 HTML 冷备中选定目录与本机目录比较，并生成可视化 HTML 报告。"""
+    """? HTML 单击文件夹查看内容；红点表示存在不同文件。 HTML ???"""
 
     destination = _prepare_destination(output_path)
     archive = read_html_backup(archive_path)
@@ -109,11 +106,8 @@ def compare_html_directory_to_source(
     left_identity["selected_directory"] = directory or "根目录"
     right_identity = _snapshot_identity(right, source)
     right_identity["selected_directory"] = "本机目录"
-    _write_archive(
-        destination,
-        _compare_payload(left, right, left_identity, right_identity),
-        _compare_document(),
-    )
+    payload = _compare_payload(left, right, left_identity, right_identity)
+    _write_archive(destination, payload, _compare_document(payload))
     return destination
 
 
@@ -378,7 +372,7 @@ def _page_header(title: str, description: str) -> str:
 <title>{safe_title}</title>
 <style>
 body{{font:14px system-ui,sans-serif;margin:2rem;color:#1d2939;max-width:1280px}} input{{width:min(100%,46rem);padding:.55rem}} table{{border-collapse:collapse;width:100%;margin-top:1rem}} td,th{{border:1px solid #d0d5dd;padding:.45rem;text-align:left;vertical-align:top;word-break:break-word}} .muted{{color:#667085}} #status{{margin:.8rem 0}} button{{margin-right:.4rem;padding:.4rem .7rem;cursor:pointer}} pre{{white-space:pre-wrap;background:#f8fafc;padding:1rem;overflow:auto}} .content-grid{{display:grid;grid-template-columns:minmax(16rem,24rem) minmax(0,1fr);gap:1.25rem;align-items:start}} .tree-pane{{border:1px solid #d0d5dd;border-radius:.5rem;padding:.75rem;max-height:72vh;overflow:auto;position:sticky;top:1rem}} .tree-pane h2{{font-size:1rem;margin:.1rem 0 .65rem}} .tree-folder{{margin:.2rem 0}} .tree-folder>summary{{cursor:pointer;list-style:none}} .tree-folder>summary::-webkit-details-marker{{display:none}} .tree-folder>summary::before{{content:"▸ ";}} .tree-folder[open]>summary::before{{content:"▾ ";}} .tree-children{{margin-left:1rem}} .tree-select,.name-link{{border:0;background:transparent;color:#175cd3;padding:.18rem .25rem;text-align:left;cursor:pointer}} .tree-select.active{{background:#d1e9ff;border-radius:.25rem;font-weight:600}} .diff-dot{{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:#d92d20;margin-left:.35rem}} .metadata{{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1rem;background:#f8fafc;padding:1rem}} .metadata dt{{font-weight:600}} .metadata dd{{margin:0;word-break:break-word}} .status-filter{{display:flex;flex-wrap:wrap;gap:.35rem}} @media(max-width:760px){{.content-grid{{grid-template-columns:1fr}} .tree-pane{{position:static;max-height:20rem}}}} .content-grid{{display:grid;grid-template-columns:minmax(15rem,22rem) minmax(0,1fr);gap:1.25rem;align-items:start}} .tree-pane{{border:1px solid #d0d5dd;border-radius:.5rem;padding:.75rem;max-height:70vh;overflow:auto;position:sticky;top:1rem}} .tree-pane h2{{font-size:1rem;margin:.1rem 0 .65rem}} .tree-root,.tree-folder{{margin:.2rem 0}} .tree-folder>summary{{cursor:pointer;list-style:none}} .tree-folder>summary::-webkit-details-marker{{display:none}} .tree-folder>summary::before{{content:"▸ ";}} .tree-folder[open]>summary::before{{content:"▾ ";}} .tree-children{{margin-left:1rem}} .tree-select{{border:0;background:transparent;color:#175cd3;padding:.15rem .25rem;text-align:left;max-width:100%;word-break:break-word}} .tree-select.active{{background:#d1e9ff;border-radius:.25rem;font-weight:600}} @media(max-width:760px){{.content-grid{{grid-template-columns:1fr}} .tree-pane{{position:static;max-height:20rem}}}}
-</style>
+.toolbar-row{{display:flex;gap:.5rem;align-items:center}}.toolbar-row input{{flex:1;padding:.55rem;border:1px solid #b8c5d6;border-radius:.35rem}}.breadcrumbs{{margin:.65rem 0;color:#5e6c84}}.breadcrumb{{border:0;background:transparent;color:#0c66e4}}.drive-controls{{margin:.65rem 0;padding:.6rem;border-left:3px solid #0c66e4;background:#f0f6ff}}.drive-controls select{{margin:0 .35rem}}.table-wrap{{overflow:auto;border:1px solid #d0d5dd;border-radius:.5rem}}tbody tr:hover{{background:#f5f9ff}}.tree-pane{{background:#f8fbff}}.metadata{{border:1px solid #d0d5dd;border-radius:.5rem}}.status-filter button:hover{{background:#eaf2ff}}.diff-dot{{box-shadow:0 0 0 2px #ffe5e5}}@media(max-width:760px){{.toolbar-row{{flex-wrap:wrap}}.toolbar-row input{{min-width:12rem}}}}</style>
 </head>
 <body>
 <h1>{safe_title}</h1>
@@ -395,12 +389,12 @@ def _scan_document(payload: dict[str, Any]) -> str:
             f"DiskHTML 冷备快照 - {payload['scan']['source_path']}",
             "单击左侧或右侧文件夹浏览内容；每个文件均保留 SHA-256。",
         )
-        + _tree_document()
+        + _tree_document(payload)
         + "</main></div>"
     )
 
 
-def _compare_document() -> str:
+def _compare_document(payload: dict[str, Any]) -> str:
     """生成与冷备快照同布局、带差异红点的比较报告。"""
 
     return (
@@ -411,21 +405,65 @@ def _compare_document() -> str:
         + """<div id="sources" class="muted"></div>
 <p class="status-filter"><button type="button" data-status="">全部</button><button type="button" data-status="MATCH">MATCH</button><button type="button" data-status="CHANGED">CHANGED</button><button type="button" data-status="ADDED">ADDED</button><button type="button" data-status="MISSING">MISSING</button><button type="button" data-status="ERROR">ERROR</button></p>
 """
-        + _tree_document()
+        + _tree_document(payload)
         + "</main></div>"
     )
 
 
-def _tree_document() -> str:
-    """返回快照与比较报告共用的树形导航和右侧详情框架。"""
+def _format_size(value: object) -> str:
+    """单击文件夹查看内容；红点表示存在不同文件。"""
 
-    return """<div class="content-grid"><aside class="tree-pane"><h2>文件树</h2><p class="muted">单击文件夹查看内容；红点表示存在不同文件。</p><div id="tree"></div></aside><main>
-<input id="filter" type="search" placeholder="按名称、摘要或状态筛选">
-<p id="status" class="muted"></p>
+    if value is None:
+        return "?"
+    number = float(value)
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit = 0
+    while number >= 1024 and unit < len(units) - 1:
+        number /= 1024
+        unit += 1
+    return f"{number:.1f} {units[unit]}" if unit else f"{number:.0f} B"
+
+
+def _initial_table_rows(payload: dict[str, Any]) -> str:
+    """单击文件夹查看内容；红点表示存在不同文件。?????"""
+
+    compare = payload.get("kind") == "compare"
+    entries = payload.get("entries", []) if compare else payload.get("files", [])
+    rows: list[str] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        if compare:
+            current = item.get("new_size_bytes") is not None
+            size = item.get("new_size_bytes") if current else item.get("old_size_bytes")
+            modified = item.get("new_modified_time") if current else item.get("old_modified_time")
+            created = item.get("new_created_time") if current else item.get("old_created_time")
+            digest = item.get("new_sha256") if current else item.get("old_sha256")
+            same = str(item.get("status") or "ERROR")
+        else:
+            size = item.get("size_bytes")
+            modified = item.get("modified_time")
+            created = item.get("created_time")
+            digest = item.get("sha256")
+            same = ""
+        values = (item.get("relative_path") or "(未命名文件)", _format_size(size), modified or "?", created or "?", digest or "?", same)
+        rows.append("<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in values) + "</tr>")
+    return "".join(rows) or '<tr><td colspan="6">当前范围没有文件。</td></tr>'
+
+
+def _tree_document(payload: dict[str, Any]) -> str:
+    """单击文件夹查看内容；红点表示存在不同文件。?????"""
+
+    same_hidden = "" if payload.get("kind") == "compare" else " hidden"
+    return f"""<div class="content-grid"><aside class="tree-pane"><h2>文件树</h2><p class="muted">单击文件夹查看内容；红点表示存在不同文件。</p><div id="tree"></div></aside><main>
+<div class="toolbar-row"><input id="filter" type="search" placeholder="按名称、摘要或状态筛选"><button id="up-folder" type="button" disabled>上一级</button></div>
+<nav id="breadcrumbs" class="breadcrumbs" aria-label="本机目录"></nav>
+<div id="drive-controls" class="drive-controls" hidden><label>文件所在盘符 <select id="drive-select"></select></label><span id="drive-hint"></span></div>
+<p id="status" class="muted">单击文件夹查看内容；红点表示存在不同文件。??????</p>
 <h2 id="detail-title">目录详情：冷备根目录</h2>
-<table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Created</th><th>SHA-256</th><th id="same-heading">是否相同</th></tr></thead><tbody id="rows"></tbody></table>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Created</th><th>SHA-256</th><th id="same-heading"{same_hidden}>是否相同</th></tr></thead><tbody id="rows">{_initial_table_rows(payload)}</tbody></table></div>
 <button id="more" type="button">显示更多</button>
-<h2>选中条目详情</h2><dl id="detail" class="metadata"><dt>提示</dt><dd>选择文件或文件夹查看完整元数据。</dd></dl>
+<h2>选中条目详情</h2><dl id="detail" class="metadata"><dt>??</dt><dd>按名称、摘要或状态筛选?????</dd></dl>
 """
 
 
@@ -440,8 +478,12 @@ def _document_footer() -> str:
   const filter = document.getElementById('filter'), status = document.getElementById('status');
   const title = document.getElementById('detail-title'), detail = document.getElementById('detail');
   const more = document.getElementById('more'), sameHeading = document.getElementById('same-heading');
+  const up = document.getElementById('up-folder'), breadcrumbs = document.getElementById('breadcrumbs');
+  const driveControls = document.getElementById('drive-controls'), driveSelect = document.getElementById('drive-select'), driveHint = document.getElementById('drive-hint');
   let selectedPath = '', selectedRecord = null, shown = 500, selectedStatus = '';
   const mode = payload.kind;
+  const sourcePath = mode === 'scan' ? String((payload.scan || {}).source_path || '') : String((payload.right || {}).source_path || '');
+  const driveMatch = /^([a-z]):[\\/]*(.*)$/i.exec(sourcePath);
   const records = mode === 'scan' ? (payload.files || []).map(scanRecord) : (payload.entries || []).map(compareRecord);
   const directories = (payload.directories || []).map((row) => ({...row}));
   const nameOf = (path) => String(path || '').split('/').filter(Boolean).at(-1) || '冷备根目录';
@@ -458,11 +500,14 @@ def _document_footer() -> str:
   function visible() { const needle=filter.value.trim().toLocaleLowerCase(); const folders=paths().filter((path)=>path&&parentOf(path)===selectedPath).map(folder); const files=records.filter((row)=>parentOf(row.relative_path)===selectedPath); return [...folders,...files].filter((row)=>{const text=[row.name,row.sha256||'',row.status||'',row.error_message||''].join(' ').toLocaleLowerCase();const state=!selectedStatus||(row.kind==='directory'?(selectedStatus==='MATCH'?row.status==='MATCH':row.status==='DIFFERENT'):row.status===selectedStatus);return state&&(!needle||text.includes(needle));}).sort((left,right)=>left.kind===right.kind?left.name.localeCompare(right.name,'zh-CN'):left.kind==='directory'?-1:1); }
   function dot() { const item=document.createElement('span');item.className='diff-dot';item.title='存在不同文件';return item; }
   function select(path,record=null) { selectedPath=path;selectedRecord=record||folder(path);shown=500;render(); }
+  function renderBreadcrumbs() { breadcrumbs.replaceChildren(); const items=[['冷备根目录','']]; let current=''; (selectedPath ? selectedPath.split('/') : []).forEach((part)=>{current=current?current+'/'+part:part;items.push([part,current]);}); items.forEach(([label,path],index)=>{if(index){const sep=document.createElement('span');sep.textContent=' › ';breadcrumbs.append(sep);}const button=document.createElement('button');button.type='button';button.className='breadcrumb';button.textContent=label;button.disabled=path===selectedPath;if(!button.disabled)button.addEventListener('click',()=>select(path));breadcrumbs.append(button);}); }
+  function localPath(row) { if(!driveMatch) return ''; const root=driveSelect.value+'\\\\'+driveMatch[2].replace(/[\\/]+$/,''); return root+(row.relative_path?'\\\\'+row.relative_path.replaceAll('/','\\\\'):''); }
   function renderTree() { const root={path:'',children:new Map()}; function ensure(path){let node=root,full='';String(path||'').split('/').filter(Boolean).forEach((part)=>{full=full?full+'/'+part:part;if(!node.children.has(part))node.children.set(part,{path:full,children:new Map()});node=node.children.get(part);});return node;} paths().forEach(ensure); function append(parent,node,depth){const item=document.createElement('details');item.className='tree-folder';item.open=depth<1;const summary=document.createElement('summary');const button=document.createElement('button');button.type='button';button.className='tree-select'+(node.path===selectedPath?' active':'');button.textContent='📁 '+nameOf(node.path);button.addEventListener('click',(event)=>{event.stopPropagation();select(node.path);});summary.append(button);if(different(node.path))summary.append(dot());item.append(summary);const children=document.createElement('div');children.className='tree-children';[...node.children.values()].sort((left,right)=>left.path.localeCompare(right.path,'zh-CN')).forEach((child)=>append(children,child,depth+1));item.append(children);parent.append(item);} tree.replaceChildren();append(tree,root,0); }
   function showDetail(row) { const fields=[['Name',row.name],['Type',row.kind==='directory'?'文件夹':'文件'],['Size',size(row.size_bytes)],['Modified',time(row.modified_time)],['Created',time(row.created_time)],['SHA-256',row.sha256||'—']];if(mode==='compare')fields.push(['是否相同',same(row)]);if(row.error_message)fields.push(['错误',row.error_message]);detail.replaceChildren();fields.forEach(([key,value])=>{const term=document.createElement('dt'),definition=document.createElement('dd');term.textContent=key;definition.textContent=value||'—';detail.append(term,definition);}); }
-  function render() { const current=visible();rows.replaceChildren();current.slice(0,shown).forEach((row)=>{const tableRow=document.createElement('tr');const label=document.createElement(row.kind==='directory'?'button':'span');label.textContent=(row.kind==='directory'?'📁 ':'📄 ')+row.name;label.className='name-link';if(row.kind==='directory'){label.type='button';label.addEventListener('click',()=>select(row.relative_path));}else{tableRow.addEventListener('click',()=>{selectedRecord=row;showDetail(row);});}[label,size(row.size_bytes),time(row.modified_time),time(row.created_time),row.sha256||'—',same(row)].forEach((value,index)=>{const cell=document.createElement('td');if(value instanceof Node)cell.append(value);else cell.textContent=value;if(index===5&&mode!=='compare')cell.hidden=true;tableRow.append(cell);});rows.append(tableRow);});sameHeading.hidden=mode!=='compare';title.textContent='目录详情：'+(selectedPath||'冷备根目录');status.textContent='目录：'+(selectedPath||'冷备根目录')+'；显示 '+Math.min(shown,current.length)+' / '+current.length+' 项';more.hidden=shown>=current.length;showDetail(selectedRecord||folder(selectedPath));renderTree(); }
+  function render() { const current=visible();rows.replaceChildren();current.slice(0,shown).forEach((row)=>{const tableRow=document.createElement('tr');const label=document.createElement(row.kind==='directory'?'button':'span');label.textContent=(row.kind==='directory'?'📁 ':'📄 ')+row.name;label.className='name-link';if(row.kind==='directory'){label.type='button';label.addEventListener('click',()=>select(row.relative_path));}else{tableRow.addEventListener('click',()=>{selectedRecord=row;showDetail(row);});}[label,size(row.size_bytes),time(row.modified_time),time(row.created_time),row.sha256||'—',same(row)].forEach((value,index)=>{const cell=document.createElement('td');if(value&&typeof value==='object'&&'nodeType' in value)cell.append(value);else cell.textContent=value;if(index===5&&mode!=='compare')cell.hidden=true;tableRow.append(cell);});rows.append(tableRow);});sameHeading.hidden=mode!=='compare';title.textContent='目录详情：'+(selectedPath||'冷备根目录');status.textContent='目录：'+(selectedPath||'冷备根目录')+'；显示 '+Math.min(shown,current.length)+' / '+current.length+' 项';more.hidden=shown>=current.length;showDetail(selectedRecord||folder(selectedPath));up.disabled=!selectedPath;renderBreadcrumbs();renderTree(); }
   if(mode==='scan'){const stats=payload.statistics;document.getElementById('summary').textContent='文件 '+stats.total_files+'，目录 '+stats.total_directories+'，已 Hash '+stats.hashed_files+'，问题 '+stats.problem_files;}else{document.getElementById('summary').textContent=Object.entries(payload.statistics).map(([key,value])=>key+' '+value).join('，');document.getElementById('sources').textContent='历史冷备：'+payload.left.path+'（目录：'+payload.left.selected_directory+'）；本机目录：'+payload.right.path;document.querySelectorAll('[data-status]').forEach((button)=>button.addEventListener('click',()=>{selectedStatus=button.dataset.status;shown=500;render();}));}
-  filter.addEventListener('input',()=>{shown=500;render();});more.addEventListener('click',()=>{shown+=500;render();});render();
+  if(driveMatch){driveControls.hidden=false;for(let code=65;code<=90;code+=1){const option=document.createElement('option');option.value=String.fromCharCode(code)+':';option.textContent=option.value;driveSelect.append(option);}driveSelect.value=driveMatch[1].toUpperCase()+':';driveHint.textContent='单击文件夹查看内容；红点表示存在不同文件。????? Windows ????????';driveSelect.addEventListener('change',()=>showDetail(selectedRecord||folder(selectedPath)));}
+  filter.addEventListener('input',()=>{shown=500;render();});more.addEventListener('click',()=>{shown+=500;render();});up.addEventListener('click',()=>select(parentOf(selectedPath)));render();
 })();
 </script>
 </body>

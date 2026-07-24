@@ -81,6 +81,7 @@ def _add_scan_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--queue-size", type=int, help="有界任务队列大小")
     parser.add_argument("--chunk-size", type=int, help="每次读取的字节数")
     parser.add_argument("--sha512", action="store_true", help="额外计算 SHA512")
+    parser.add_argument("--follow-links", action="store_true", help="?????? Windows ?????")
 
 
 def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:
@@ -92,6 +93,7 @@ def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:
         queue_size=args.queue_size if args.queue_size is not None else defaults.queue_size,
         chunk_size=args.chunk_size if args.chunk_size is not None else defaults.chunk_size,
         sha512=args.sha512 or defaults.sha512,
+        follow_links=args.follow_links or defaults.follow_links,
     )
 
 

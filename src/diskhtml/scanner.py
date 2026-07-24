@@ -90,7 +90,7 @@ class Scanner:
 
         requested_path = Path(source).expanduser()
         source_is_link = requested_path.is_symlink()
-        path = requested_path.resolve(strict=False)
+        path = requested_path.absolute() if source_is_link and options.follow_links else requested_path.resolve(strict=False)
         source_type = (
             "FILE"
             if path.is_file()
@@ -99,7 +99,7 @@ class Scanner:
             else "DIRECTORY"
         )
         scan_id = self.database.create_scan(source_type, str(path), asdict(options))
-        if source_is_link:
+        if source_is_link and not options.follow_links:
             self.database.record_error(
                 scan_id,
                 None,
@@ -134,7 +134,7 @@ class Scanner:
             )
             self.database.set_scan_status(scan_id, ScanStatus.FAILED)
             raise FileNotFoundError(f"扫描目标不存在：{source}")
-        if source.is_symlink():
+        if source.is_symlink() and not options.follow_links:
             self.database.record_error(
                 scan_id, None, "REPARSE_POINT", "默认不跟随符号链接或 Windows 重解析点。"
             )
@@ -145,7 +145,7 @@ class Scanner:
         self.database.record_volume(scan_id, collect_volume_info(source))
         root = source.parent if source.is_file() else source
         try:
-            root_stat = os.stat(_filesystem_path(root), follow_symlinks=False)
+            root_stat = os.stat(_filesystem_path(root), follow_symlinks=options.follow_links)
         except OSError:
             root_stat = None
         self.database.record_directory(
@@ -175,7 +175,7 @@ class Scanner:
                     relative_path = relative_display_path(path, root)
                     path_key = normalized_path_key(relative_path)
                     try:
-                        stat = os.stat(_filesystem_path(path), follow_symlinks=False)
+                        stat = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                     except OSError:
                         stat = None
                     if stat is not None:
@@ -293,36 +293,51 @@ class Scanner:
     def _iter_paths(
         self, source: Path, root: Path, options: ScanOptions, scan_id: str
     ) -> Iterator[Path]:
-        """递归枚举普通文件，跳过并审计链接和重解析点。"""
+        """??????????????????????????????????"""
 
         if source.is_file():
             if not self._excluded_file(source, options):
                 yield source
             return
         stack = [source]
+        visited_targets: set[tuple[int, int]] = set()
         while stack:
             directory = stack.pop()
+            if options.follow_links:
+                try:
+                    target_stat = os.stat(_filesystem_path(directory), follow_symlinks=True)
+                    target_key = (target_stat.st_dev, target_stat.st_ino)
+                except OSError as exc:
+                    relative = relative_display_path(directory, root) if directory != root else ""
+                    self.database.record_error(
+                        scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
+                    )
+                    continue
+                if target_key in visited_targets:
+                    continue
+                visited_targets.add(target_key)
             try:
                 with os.scandir(_filesystem_path(directory)) as entries:
                     for entry in entries:
                         path = directory / entry.name
                         relative = relative_display_path(path, root)
                         try:
-                            if entry.is_symlink() or self._is_reparse_point(entry):
+                            linked = entry.is_symlink() or self._is_reparse_point(entry)
+                            if linked and not options.follow_links:
                                 self.database.record_error(
                                     scan_id,
                                     relative,
                                     "REPARSE_POINT",
-                                    "默认不跟随符号链接或 Windows 重解析点。",
+                                    "?????????? Windows ?????",
                                 )
                                 continue
-                            if entry.is_dir(follow_symlinks=False):
+                            if entry.is_dir(follow_symlinks=options.follow_links):
                                 if self._excluded_directory(relative, options):
                                     continue
                                 key = normalized_path_key(relative)
                                 parent = Path(relative).parent.as_posix()
                                 parent_key = normalized_path_key(parent) if parent != "." else ""
-                                directory_stat = entry.stat(follow_symlinks=False)
+                                directory_stat = entry.stat(follow_symlinks=options.follow_links)
                                 self.database.record_directory(
                                     scan_id,
                                     relative,
@@ -332,9 +347,9 @@ class Scanner:
                                     modified_time=timestamp_to_utc(directory_stat.st_mtime_ns),
                                 )
                                 stack.append(path)
-                            elif entry.is_file(follow_symlinks=False) and not self._excluded_file(
-                                path, options
-                            ):
+                            elif entry.is_file(
+                                follow_symlinks=options.follow_links
+                            ) and not self._excluded_file(path, options):
                                 yield path
                         except OSError as exc:
                             self.database.record_error(
@@ -399,7 +414,7 @@ class Scanner:
         last_result: dict[str, object] | None = None
         for attempt in range(1, options.retry_count + 2):
             try:
-                before = os.stat(_filesystem_path(path), follow_symlinks=False)
+                before = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                 sha256 = hashlib.sha256()
                 sha512 = hashlib.sha512() if options.sha512 else None
                 with open(_filesystem_path(path), "rb", buffering=0) as handle:
@@ -407,7 +422,7 @@ class Scanner:
                         sha256.update(block)
                         if sha512 is not None:
                             sha512.update(block)
-                after = os.stat(_filesystem_path(path), follow_symlinks=False)
+                after = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                 base = self._base_file_result(
                     relative_path, path_key, path.name, extension, before, attempt
                 )
@@ -430,7 +445,7 @@ class Scanner:
                 }
             except OSError as exc:
                 try:
-                    stat = os.stat(_filesystem_path(path), follow_symlinks=False)
+                    stat = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                     base = self._base_file_result(
                         relative_path, path_key, path.name, extension, stat, attempt
                     )

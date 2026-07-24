@@ -96,3 +96,12 @@ DiskHTML.exe compare-source .\资料冷备.html . E:\当前副本 .\根目录比
 - CSV、JSON 和目录式报告导出。
 
 这些兼容能力仍可由 Python 命令行维护旧项目，但不是 DiskHTML.exe 的用户工作流。
+## 软链接与盘符切换
+
+默认不跟随软链接和 Windows 重解析目录。如需将链接指向的文件写入冷备，在 `backup` 或 `compare-source` 后使用 `--follow-links`：
+
+~~~cmd
+DiskHTML.exe backup F:\Documents .\资料冷备.html --follow-links
+~~~
+
+程序会按实际目录身份防止链接循环。HTML 详情页提供“文件所在盘符”选择；当移动硬盘盘符变更时，可切换为新盘符查看对应本机路径。路径经过软链接时，由 Windows 按当前链接目标解析。
