@@ -254,4 +254,5 @@
 - 构建：使用 PyInstaller 6.21.0、Python 3.12.13 在 Windows 11 本机重新生成 `build\dist\DiskHTML`。
 - 产物：发布目录含 192 个文件、总计 97,151,785 字节；`DiskHTML.exe` 为 2,296,966 字节，SHA256 为 `7C6E4FCF1D630829D651687E776253F1C17F23ECCBA9FBCD1713DB952B465636`。
 - 验证：发布清单脚本成功读取产物并写入 JSON；构建目录受 `.gitignore` 排除。
+- 烟雾：在空的 `C:\tmp` 工作目录后台启动 `DiskHTML.exe` 3 秒后正常结束，未立即异常退出或写入临时文件。
 - 待办：仍需在未安装 Python/开发依赖的干净 Windows 10/11 环境运行该包并完成发布清单中的人工验收。
