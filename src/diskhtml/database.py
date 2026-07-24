@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from .models import CompareStatus, ScanStatus, validate_scan_transition
@@ -162,7 +163,8 @@ class Database:
     def __init__(self, path: Path | str):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path)
+        self._lock = RLock()
+        self.connection = sqlite3.connect(self.path, check_same_thread=False)
         try:
             self.connection.row_factory = sqlite3.Row
             self.connection.execute("PRAGMA foreign_keys = ON")
@@ -233,14 +235,15 @@ class Database:
     def _transaction(self) -> Iterator[sqlite3.Connection]:
         """开启立即写事务，失败时确保整批修改回滚。"""
 
-        self.connection.execute("BEGIN IMMEDIATE")
-        try:
-            yield self.connection
-        except BaseException:
-            self.connection.rollback()
-            raise
-        else:
-            self.connection.commit()
+        with self._lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                yield self.connection
+            except BaseException:
+                self.connection.rollback()
+                raise
+            else:
+                self.connection.commit()
 
     @contextmanager
     def batch(self) -> Iterator[DatabaseBatch]:
@@ -278,14 +281,16 @@ class Database:
     def get_scan(self, scan_id: str) -> sqlite3.Row | None:
         """取得一个扫描任务。"""
 
-        return self.connection.execute(
-            "SELECT * FROM scan_jobs WHERE id = ?", (scan_id,)
-        ).fetchone()
+        with self._lock:
+            return self.connection.execute(
+                "SELECT * FROM scan_jobs WHERE id = ?", (scan_id,)
+            ).fetchone()
 
     def iter_scans(self) -> Iterator[sqlite3.Row]:
         """按创建时间流式遍历扫描任务。"""
 
-        yield from self.connection.execute("SELECT * FROM scan_jobs ORDER BY started_at, id")
+        with self._lock:
+            yield from self.connection.execute("SELECT * FROM scan_jobs ORDER BY started_at, id")
 
     def latest_scan(self) -> sqlite3.Row | None:
         """取得最近完成的扫描任务。"""
@@ -482,7 +487,12 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
     def __enter__(self) -> DatabaseBatch:
         """开始立即写事务，确保批次中的记录原子可见。"""
 
-        self._connection.execute("BEGIN IMMEDIATE")
+        self._database._lock.acquire()
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+        except BaseException:
+            self._database._lock.release()
+            raise
         self._active = True
         return self
 
@@ -496,6 +506,7 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
                 self._connection.rollback()
         finally:
             self._active = False
+            self._database._lock.release()
         return False
 
     def set_scan_status(self, scan_id: str, status: ScanStatus, completed: bool = False) -> None:

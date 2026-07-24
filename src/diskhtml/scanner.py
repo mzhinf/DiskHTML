@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -10,6 +11,7 @@ from dataclasses import asdict
 from fnmatch import fnmatch
 from pathlib import Path
 from threading import Event
+from time import monotonic
 
 from .config import ScanConfig
 from .database import Database
@@ -19,6 +21,18 @@ from .util import normalized_path_key, relative_display_path, timestamp_to_utc, 
 
 # 保留早期公开名称，后续调用方可以平滑迁移到 ScanConfig。
 ScanOptions = ScanConfig
+_REPARSE_POINT_ATTRIBUTE = 0x400
+
+
+def _filesystem_path(path: Path) -> str:
+    """返回可供 Windows 长路径 API 使用的本地路径。"""
+
+    text = str(path.absolute())
+    if os.name != "nt" or text.startswith("\\\\?\\"):
+        return text
+    if text.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + text[2:]
+    return "\\\\?\\" + text
 
 
 class ScanController:
@@ -29,7 +43,7 @@ class ScanController:
         self._cancelled = Event()
 
     def pause(self) -> None:
-        """请求暂停，工作循环会在文件边界等待。"""
+        """请求暂停；扫描器会在下一个文件边界持久化 PAUSED。"""
 
         self._paused.set()
 
@@ -39,7 +53,7 @@ class ScanController:
         self._paused.clear()
 
     def cancel(self) -> None:
-        """请求取消，已完成的文件结果仍保留用于恢复。"""
+        """请求取消；已完整提交的文件结果保留给后续恢复。"""
 
         self._cancelled.set()
 
@@ -74,9 +88,26 @@ class Scanner:
     ) -> str:
         """创建并运行一个新扫描任务。"""
 
-        path = Path(source).expanduser().resolve(strict=False)
-        source_type = "FILE" if path.is_file() else "DIRECTORY"
+        requested_path = Path(source).expanduser()
+        source_is_link = requested_path.is_symlink()
+        path = requested_path.resolve(strict=False)
+        source_type = (
+            "FILE"
+            if path.is_file()
+            else "VOLUME"
+            if path.anchor and path == Path(path.anchor)
+            else "DIRECTORY"
+        )
         scan_id = self.database.create_scan(source_type, str(path), asdict(options))
+        if source_is_link:
+            self.database.record_error(
+                scan_id,
+                None,
+                "REPARSE_POINT",
+                "默认不跟随符号链接或 Windows 重解析点。",
+            )
+            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+            raise ValueError("扫描目标不能是符号链接或重解析点")
         self._run(scan_id, path, options, controller or ScanController())
         return scan_id
 
@@ -88,8 +119,6 @@ class Scanner:
             raise ValueError(f"未找到扫描任务：{scan_id}")
         if job["status"] == ScanStatus.COMPLETED:
             raise ValueError("已完成的扫描任务无需恢复")
-        import json
-
         options = ScanOptions(**json.loads(job["options_json"]))
         self._run(scan_id, Path(job["source_path"]), options, controller or ScanController())
 
@@ -98,60 +127,114 @@ class Scanner:
     ) -> None:
         """执行扫描主循环；当前线程是唯一的 SQLite 写入者。"""
 
+        started = monotonic()
         if not source.exists():
+            self.database.record_error(
+                scan_id, None, "SOURCE_NOT_FOUND", f"扫描目标不存在：{source}"
+            )
             self.database.set_scan_status(scan_id, ScanStatus.FAILED)
             raise FileNotFoundError(f"扫描目标不存在：{source}")
+        if source.is_symlink():
+            self.database.record_error(
+                scan_id, None, "REPARSE_POINT", "默认不跟随符号链接或 Windows 重解析点。"
+            )
+            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+            raise ValueError("扫描目标不能是符号链接或重解析点")
+
         self.database.set_scan_status(scan_id, ScanStatus.SCANNING)
         self.database.record_volume(scan_id, collect_volume_info(source))
         root = source.parent if source.is_file() else source
-        root_key = ""
-        self.database.record_directory(scan_id, "", root_key, None)
+        self.database.record_directory(scan_id, "", "", None)
         seen = 0
         completed = 0
         bytes_hashed = 0
+        known_bytes = 0
         pending: set[Future[dict[str, object]]] = set()
+        cancelled = False
         try:
             with ThreadPoolExecutor(
                 max_workers=max(1, options.workers), thread_name_prefix="hash"
             ) as executor:
                 for path in self._iter_paths(source, root, options, scan_id):
-                    controller.wait_if_paused()
+                    self._wait_at_file_boundary(scan_id, controller)
                     if controller.cancelled:
+                        cancelled = True
                         break
                     seen += 1
                     relative_path = relative_display_path(path, root)
                     path_key = normalized_path_key(relative_path)
-                    stat = path.stat(follow_symlinks=False)
+                    try:
+                        stat = os.stat(_filesystem_path(path), follow_symlinks=False)
+                    except OSError:
+                        stat = None
+                    if stat is not None:
+                        known_bytes += stat.st_size
                     existing = self.database.get_file(scan_id, path_key)
-                    if self._is_reusable(existing, stat):
+                    if stat is not None and self._is_reusable(existing, stat):
                         completed += 1
                         bytes_hashed += stat.st_size
-                        self._notify(scan_id, seen, completed, bytes_hashed, relative_path)
+                        self._notify(
+                            scan_id,
+                            seen,
+                            completed,
+                            bytes_hashed,
+                            known_bytes,
+                            relative_path,
+                            started,
+                        )
                         continue
                     pending.add(executor.submit(self._hash_file, path, root, options))
                     if len(pending) >= max(1, options.queue_size):
                         done, pending = wait(pending, return_when=FIRST_COMPLETED)
                         completed, bytes_hashed = self._store_done(
-                            scan_id, done, seen, completed, bytes_hashed
+                            scan_id, done, seen, completed, bytes_hashed, known_bytes, started
                         )
-                while pending:
-                    controller.wait_if_paused()
+
+                while pending and not cancelled:
+                    self._wait_at_file_boundary(scan_id, controller)
                     if controller.cancelled:
-                        for future in pending:
-                            future.cancel()
+                        cancelled = True
                         break
                     done, pending = wait(pending, return_when=FIRST_COMPLETED)
                     completed, bytes_hashed = self._store_done(
-                        scan_id, done, seen, completed, bytes_hashed
+                        scan_id, done, seen, completed, bytes_hashed, known_bytes, started
+                    )
+
+                if cancelled:
+                    for future in pending:
+                        future.cancel()
+
+            if cancelled:
+                finished = {future for future in pending if not future.cancelled()}
+                if finished:
+                    completed, bytes_hashed = self._store_done(
+                        scan_id, finished, seen, completed, bytes_hashed, known_bytes, started
                     )
             self.database.update_progress(scan_id, seen, completed, bytes_hashed)
-            if controller.cancelled:
+            if cancelled:
                 self.database.set_scan_status(scan_id, ScanStatus.CANCELLED)
             else:
                 self.database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
         except Exception:
-            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+            job = self.database.get_scan(scan_id)
+            if job is not None and job["status"] != ScanStatus.COMPLETED:
+                self.database.set_scan_status(scan_id, ScanStatus.FAILED)
             raise
+
+    def _wait_at_file_boundary(self, scan_id: str, controller: ScanController) -> None:
+        """持久化暂停状态，并在继续后恢复 SCANNING。"""
+
+        if not controller.paused:
+            return
+        job = self.database.get_scan(scan_id)
+        if job is not None and job["status"] == ScanStatus.SCANNING:
+            self.database.set_scan_status(scan_id, ScanStatus.PAUSED)
+        controller.wait_if_paused()
+        if controller.cancelled:
+            return
+        job = self.database.get_scan(scan_id)
+        if job is not None and job["status"] == ScanStatus.PAUSED:
+            self.database.set_scan_status(scan_id, ScanStatus.SCANNING)
 
     def _store_done(
         self,
@@ -160,52 +243,74 @@ class Scanner:
         seen: int,
         completed: int,
         bytes_hashed: int,
+        known_bytes: int,
+        started: float,
     ) -> tuple[int, int]:
         """由唯一写入线程提交完成的 Hash 结果。"""
 
-        results = [future.result() for future in done]
+        results = [future.result() for future in done if not future.cancelled()]
         for result in results:
             completed += 1
             if result["hash_status"] == HashStatus.OK:
                 bytes_hashed += int(result["size_bytes"] or 0)
 
-        with self.database.batch() as batch:
-            for result in results:
-                batch.record_file(scan_id, result)
-            batch.update_progress(scan_id, seen, completed, bytes_hashed)
+        if results:
+            with self.database.batch() as batch:
+                for result in results:
+                    batch.record_file(scan_id, result)
+                    if result["hash_status"] != HashStatus.OK:
+                        batch.record_error(
+                            scan_id,
+                            str(result["relative_path"]),
+                            str(result.get("error_code") or "HASH_ERROR"),
+                            str(result.get("error_message") or "文件 Hash 未完成。"),
+                        )
+                batch.update_progress(scan_id, seen, completed, bytes_hashed)
 
         for result in results:
-            self._notify(scan_id, seen, completed, bytes_hashed, str(result["relative_path"]))
+            self._notify(
+                scan_id,
+                seen,
+                completed,
+                bytes_hashed,
+                known_bytes,
+                str(result["relative_path"]),
+                started,
+            )
         return completed, bytes_hashed
 
     def _iter_paths(
         self, source: Path, root: Path, options: ScanOptions, scan_id: str
     ) -> Iterator[Path]:
-        """递归枚举普通文件，跳过链接和重解析点。"""
+        """递归枚举普通文件，跳过并审计链接和重解析点。"""
 
         if source.is_file():
-            yield source
+            if not self._excluded_file(source, options):
+                yield source
             return
         stack = [source]
         while stack:
             directory = stack.pop()
             try:
-                with os.scandir(directory) as entries:
+                with os.scandir(_filesystem_path(directory)) as entries:
                     for entry in entries:
-                        path = Path(entry.path)
+                        path = directory / entry.name
+                        relative = relative_display_path(path, root)
                         try:
-                            if entry.is_symlink():
+                            if entry.is_symlink() or self._is_reparse_point(entry):
+                                self.database.record_error(
+                                    scan_id,
+                                    relative,
+                                    "REPARSE_POINT",
+                                    "默认不跟随符号链接或 Windows 重解析点。",
+                                )
                                 continue
-                            relative = relative_display_path(path, root)
                             if entry.is_dir(follow_symlinks=False):
                                 if self._excluded_directory(relative, options):
                                     continue
                                 key = normalized_path_key(relative)
-                                parent_key = (
-                                    normalized_path_key(Path(relative).parent.as_posix())
-                                    if Path(relative).parent.as_posix() != "."
-                                    else ""
-                                )
+                                parent = Path(relative).parent.as_posix()
+                                parent_key = normalized_path_key(parent) if parent != "." else ""
                                 self.database.record_directory(scan_id, relative, key, parent_key)
                                 stack.append(path)
                             elif entry.is_file(follow_symlinks=False) and not self._excluded_file(
@@ -213,18 +318,21 @@ class Scanner:
                             ):
                                 yield path
                         except OSError as exc:
-                            self.database.record_error(
-                                scan_id,
-                                relative if "relative" in locals() else None,
-                                "ENTRY_ERROR",
-                                str(exc),
-                            )
+                            self.database.record_error(scan_id, relative, "ENTRY_ERROR", str(exc))
             except OSError as exc:
                 relative = relative_display_path(directory, root) if directory != root else ""
                 self.database.record_directory(
                     scan_id, relative, normalized_path_key(relative), None, str(exc)
                 )
                 self.database.record_error(scan_id, relative, "DIRECTORY_ERROR", str(exc))
+
+    @staticmethod
+    def _is_reparse_point(entry: os.DirEntry[str]) -> bool:
+        """识别 Windows 重解析点，避免目录联接导致循环或越界。"""
+
+        if os.name != "nt":
+            return False
+        return bool(entry.stat(follow_symlinks=False).st_file_attributes & _REPARSE_POINT_ATTRIBUTE)
 
     @staticmethod
     def _excluded_directory(relative_path: str, options: ScanOptions) -> bool:
@@ -265,15 +373,15 @@ class Scanner:
         last_result: dict[str, object] | None = None
         for attempt in range(1, options.retry_count + 2):
             try:
-                before = path.stat(follow_symlinks=False)
+                before = os.stat(_filesystem_path(path), follow_symlinks=False)
                 sha256 = hashlib.sha256()
                 sha512 = hashlib.sha512() if options.sha512 else None
-                with path.open("rb", buffering=0) as handle:
+                with open(_filesystem_path(path), "rb", buffering=0) as handle:
                     while block := handle.read(options.chunk_size):
                         sha256.update(block)
                         if sha512 is not None:
                             sha512.update(block)
-                after = path.stat(follow_symlinks=False)
+                after = os.stat(_filesystem_path(path), follow_symlinks=False)
                 base = self._base_file_result(
                     relative_path, path_key, path.name, extension, before, attempt
                 )
@@ -296,7 +404,7 @@ class Scanner:
                 }
             except OSError as exc:
                 try:
-                    stat = path.stat(follow_symlinks=False)
+                    stat = os.stat(_filesystem_path(path), follow_symlinks=False)
                     base = self._base_file_result(
                         relative_path, path_key, path.name, extension, stat, attempt
                     )
@@ -348,11 +456,33 @@ class Scanner:
         }
 
     def _notify(
-        self, scan_id: str, seen: int, completed: int, bytes_hashed: int, current_path: str | None
+        self,
+        scan_id: str,
+        seen: int,
+        completed: int,
+        bytes_hashed: int,
+        known_bytes: int,
+        current_path: str | None,
+        started: float,
     ) -> None:
-        """在存在回调时发送进度快照。"""
+        """在存在回调时发送包含速率的进度快照。"""
 
         if self.progress_callback:
+            elapsed = max(monotonic() - started, 0.001)
+            bytes_per_second = bytes_hashed / elapsed
+            estimated_remaining = (
+                max(known_bytes - bytes_hashed, 0) / bytes_per_second
+                if bytes_per_second > 0
+                else None
+            )
             self.progress_callback(
-                ScanProgress(scan_id, seen, completed, bytes_hashed, current_path)
+                ScanProgress(
+                    scan_id,
+                    seen,
+                    completed,
+                    bytes_hashed,
+                    current_path,
+                    bytes_per_second,
+                    estimated_remaining,
+                )
             )

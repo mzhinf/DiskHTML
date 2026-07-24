@@ -162,13 +162,15 @@ class ErrorRecord:
 
 @dataclass(frozen=True)
 class ScanProgress:
-    """向 CLI 或 GUI 报告的扫描进度快照。"""
+    """向 CLI 或 GUI 报告的扫描进度快照；未知 ETA 使用 None。"""
 
     scan_id: str
     files_seen: int
     files_completed: int
     bytes_hashed: int
     current_path: str | None
+    bytes_per_second: float = 0.0
+    estimated_remaining_seconds: float | None = None
 
 
 ProgressCallback = Callable[[ScanProgress], None]
