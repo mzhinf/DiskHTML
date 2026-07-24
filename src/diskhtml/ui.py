@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -16,7 +16,30 @@ from PyQt6.QtWidgets import (
     QToolBar,
 )
 
+from .config import ScanConfig
 from .database import Database
+from .scanner import Scanner
+
+
+class ScanThread(QThread):
+    """在后台线程运行扫描，避免阻塞 Qt 主事件循环。"""
+
+    completed = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, database_path: Path, source: Path):
+        super().__init__()
+        self.database_path = database_path
+        self.source = source
+
+    def run(self) -> None:
+        """调用既有扫描服务并通过信号返回结果。"""
+
+        try:
+            with Database(self.database_path) as database:
+                self.completed.emit(Scanner(database).start(self.source, ScanConfig()))
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.failed.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
