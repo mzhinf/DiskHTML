@@ -28,6 +28,7 @@
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
 .\scripts\build_windows.ps1 -Clean
 Get-FileHash .\build\dist\DiskHTML\DiskHTML.exe -Algorithm SHA256
+.\.venv\Scripts\python.exe scripts\create_release_manifest.py .\build\dist\DiskHTML .\build\DiskHTML-release-manifest.json
 ~~~
 
 ## Windows 10/11 人工验收
