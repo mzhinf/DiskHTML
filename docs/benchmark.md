@@ -28,3 +28,13 @@ HDD 和 SSD 应分别选择相同的数据集、不同的输出目录执行。HD
 - 权限错误、路径边界及取消后恢复：使用独立测试目录确认错误审计和恢复语义。
 
 当前仓库仅完成小样本冒烟验证；正式 HDD/SSD 测量和 300 万文件压力结果应作为发布证据单独保存。
+## 300 万文件压力数据集
+
+使用 `scripts/generate_stress_dataset.py` 生成可追溯的测试目录。脚本拒绝复用已有输出目录，失败时保留现场以便诊断；默认只生成 10,000 个零字节文件。创建 300 万文件必须显式指定参数，并应在专用测试盘执行。
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\generate_stress_dataset.py D:\DiskHTML-stress-3m --files 3000000 --files-per-directory 1000 --progress-every 10000
+.\.venv\Scripts\python.exe scripts\benchmark_scan.py D:\DiskHTML-stress-3m D:\DiskHTML-benchmark-3m --workers 1 --queue-size 8
+~~~
+
+生成器会写入 `dataset.json`，其中记录文件数、逻辑大小、目录扇出和生成耗时。正式报告必须同时归档该清单和基准产生的 `result.json`，并记录测试盘是否为 HDD 或 SSD。
