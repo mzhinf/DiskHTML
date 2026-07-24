@@ -125,6 +125,9 @@ class MainWindow(QMainWindow):
         config_button.clicked.connect(self.load_scan_config)
         toolbar.addWidget(config_button)
         toolbar.addWidget(scan_button)
+        file_scan_button = QPushButton("扫描文件", self)
+        file_scan_button.clicked.connect(self.start_file_scan)
+        toolbar.addWidget(file_scan_button)
         report_button = QPushButton("\u6253\u5f00\u62a5\u544a", self)
         report_button.clicked.connect(self.open_report)
         toolbar.addWidget(report_button)
@@ -211,25 +214,36 @@ class MainWindow(QMainWindow):
     def start_scan(self) -> None:
         """选择目录后在后台启动扫描。"""
 
+        source = QFileDialog.getExistingDirectory(self, "选择扫描目录")
+        if source:
+            self._start_source_scan(Path(source))
+
+    def start_file_scan(self) -> None:
+        """选择单个文件后在后台启动扫描。"""
+
+        filename, _ = QFileDialog.getOpenFileName(self, "选择扫描文件")
+        if filename:
+            self._start_source_scan(Path(filename))
+
+    def _start_source_scan(self, source: Path) -> None:
+        """以统一的后台线程启动指定文件或目录扫描。"""
+
         if self._database_path is None:
             self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        source = QFileDialog.getExistingDirectory(self, "选择扫描目录")
-        if not source:
             return
         if hasattr(self, "_scan_thread") and self._scan_thread.isRunning():
             self.statusBar().showMessage("已有扫描正在运行。", 5_000)
             return
         self._scan_controller = ScanController()
         self._scan_thread = ScanThread(
-            self._database_path, Path(source), self._scan_controller, self._scan_config
+            self._database_path, source, self._scan_controller, self._scan_config
         )
         self._scan_thread.completed.connect(self._scan_completed)
         self._scan_thread.failed.connect(self._scan_failed)
-        self.statusBar().showMessage("扫描正在后台运行。")
         self._scan_thread.progress.connect(self._scan_progress)
         self._scan_progress_bar.setRange(0, 0)
         self._scan_progress_bar.show()
+        self.statusBar().showMessage("扫描正在后台运行。")
         self._scan_thread.start()
 
     def _scan_control(self, action: str) -> None:

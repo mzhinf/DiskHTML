@@ -171,3 +171,22 @@ class UiTests(TestCase):
             self.assertFalse(table.isRowHidden(0))
             self.assertTrue(table.isRowHidden(1))
             window.close()
+
+    def test_start_file_scan_uses_background_thread(self) -> None:
+        """选择单个文件后应创建后台扫描线程。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            source = Path(directory) / "sample.bin"
+            source.write_bytes(b"content")
+            with Database(path):
+                pass
+            window = MainWindow(path)
+            with (
+                patch("diskhtml.ui.QFileDialog.getOpenFileName", return_value=(str(source), "")),
+                patch("diskhtml.ui.ScanThread") as thread_class,
+            ):
+                window.start_file_scan()
+            self.assertEqual(thread_class.call_args.args[:2], (path, source))
+            thread_class.return_value.start.assert_called_once_with()
+            window.close()
