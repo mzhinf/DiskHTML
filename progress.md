@@ -188,3 +188,9 @@
 
 - 已完成：自动化验证窗口可恢复持久化的 `CANCELLED` 扫描，并在后台完成同一快照。
 - 验证：完整单元测试 47 项通过。
+### 阶段 8：Windows 本机构建
+
+- 已完成：修正 `diskhtml-gui` 控制台入口声明，新增 PyInstaller 构建依赖、图形界面入口与 `scripts/build_windows.ps1` 构建脚本。
+- 构建：本机已成功生成 `build\dist\DiskHTML\DiskHTML.exe`；构建产物由 `.gitignore` 排除。
+- 验证：PyInstaller 构建成功；Ruff 格式检查与静态检查通过；完整单元测试 47 项通过。
+- 待办：在干净 Windows 10/11 环境执行新建项目、扫描、恢复、比较、报告打开和重启恢复的人工验收。

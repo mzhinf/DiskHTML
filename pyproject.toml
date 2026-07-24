@@ -12,12 +12,13 @@ dependencies = ["PyQt6>=6.7,<6.9"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.12,<0.13"]
+build = ["pyinstaller>=6,<7"]
 
 [project.scripts]
 diskhtml = "diskhtml.cli:main"
+diskhtml-gui = "diskhtml.ui:main"
 
 [tool.setuptools.packages.find]
-diskhtml-gui = "diskhtml.ui:main"
 where = ["src"]
 
 [tool.ruff]
