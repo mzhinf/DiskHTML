@@ -5,8 +5,8 @@ DiskHTML 是面向 Windows 10/11 的文件 Hash 冷备份校验工具。项目�
 
 ## 当前状态
 
-当前完成工程骨架与数据契约。`init-db` 和 `check-db` 用于验证命令行入口及数据库迁移框架；
-扫描、导出、比较和图形界面仍按 `task_plan.md` 分阶段实现。
+当前已完成工程骨架、数据契约以及 SQLite 持久化与迁移。数据库支持版本化升级、批量事务、
+流式仓储查询与比较任务记录；扫描、导出、完整比较引擎和图形界面仍按 `task_plan.md` 分阶段实现。
 
 ## 开发环境
 
@@ -25,5 +25,5 @@ diskhtml init-db .\archive.sqlite3
 diskhtml check-db .\archive.sqlite3
 ```
 
-配置格式、数据格式和恢复语义分别见 `config.example.toml`、`docs/data-format.md` 和
-`docs/recovery.md`。
+配置格式、数据格式、数据库迁移和恢复语义分别见 `config.example.toml`、`docs/data-format.md`、
+`docs/database-migration.md` 和 `docs/recovery.md`。

@@ -163,13 +163,18 @@ class Scanner:
     ) -> tuple[int, int]:
         """由唯一写入线程提交完成的 Hash 结果。"""
 
-        for future in done:
-            result = future.result()
-            self.database.record_file(scan_id, result)
+        results = [future.result() for future in done]
+        for result in results:
             completed += 1
             if result["hash_status"] == HashStatus.OK:
                 bytes_hashed += int(result["size_bytes"] or 0)
-            self.database.update_progress(scan_id, seen, completed, bytes_hashed)
+
+        with self.database.batch() as batch:
+            for result in results:
+                batch.record_file(scan_id, result)
+            batch.update_progress(scan_id, seen, completed, bytes_hashed)
+
+        for result in results:
             self._notify(scan_id, seen, completed, bytes_hashed, str(result["relative_path"]))
         return completed, bytes_hashed
 

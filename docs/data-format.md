@@ -3,7 +3,7 @@
 ## 版本策略
 
 - 配置文件使用整数 `format_version`，当前为 `1`；未知版本直接拒绝。
-- SQLite 在 `schema_meta.schema_version` 保存模式版本，当前为字符串 `"1"`。
+- SQLite 在 `schema_meta.schema_version` 保存模式版本，当前为整数 `2`；迁移历史保存在 `migration_history`。
 - 扫描任务保存创建时的配置快照，恢复时不得套用新的默认配置。
 - 未来新增可选字段应保持旧读取器可理解；删除、改名或改变语义必须提供迁移。
 
