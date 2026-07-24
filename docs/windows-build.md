@@ -1,25 +1,38 @@
-# Windows 发布构建
+# Windows 构建与验收
 
-项目提供 PyInstaller 图形界面构建脚本。构建前在项目虚拟环境安装可选依赖：
+## 构建
 
-```powershell
+在项目虚拟环境中安装构建依赖：
+
+~~~powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
-```
-
-执行构建：
-
-```powershell
 .\scripts\build_windows.ps1
-```
+~~~
 
-产物位于 `build\dist\DiskHTML\DiskHTML.exe`。脚本以 `scripts\gui_entry.py` 作为入口，确保使用包导入启动 PyQt6 界面。可使用 `-Clean` 清理旧构建目录后重新构建。
+产物位于 build\dist\DiskHTML\DiskHTML.exe。无参数时启动 HTML 冷备 GUI；带参数时运行精简命令行入口，例如：
 
-发布前至少执行：
+~~~cmd
+DiskHTML.exe backup F:\Documents .\资料冷备.html
+~~~
 
-```powershell
+## EXE 验收
+
+在未安装 Python 的 Windows 10/11 环境中：
+
+1. 启动 DiskHTML.exe，确认工具栏只显示“生成冷备 HTML、比较冷备目录、打开报告、扫描配置、暂停、继续、取消”。
+2. 对小目录生成新的 HTML 冷备并用浏览器打开。
+3. 在历史 HTML 树中选择一个目录，并与本机目录生成 HTML 比较报告。
+4. 确认比较报告状态筛选可见。
+5. 在命令提示符执行 DiskHTML.exe backup <目录> <新.html>，确认 HTML 实际生成。
+6. 确认输出目录只包含用户选择的 HTML 文件，不需要 SQLite 项目文件。
+7. 扫描期间测试暂停、继续或取消操作。
+
+构建前应通过：
+
+~~~powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
-```
+~~~
 
-建议在干净的 Windows 10/11 环境中运行生成的可执行文件，完成项目新建、扫描、恢复、比较、报告打开和关闭重启恢复验收。
+详细操作见 [DiskHTML.exe 使用指南](diskhtml-exe-guide.md)。

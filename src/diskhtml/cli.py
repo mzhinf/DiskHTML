@@ -13,7 +13,11 @@ from . import __version__
 from .compare import compare_scans, compare_sources
 from .config import ScanConfig, load_config
 from .database import Database
-from .html_archive import compare_html_archives, create_html_backup
+from .html_archive import (
+    compare_html_archives,
+    compare_html_directory_to_source,
+    create_html_backup,
+)
 from .logging_config import configure_logging
 from .report import export_compare, export_scan
 from .scanner import Scanner
@@ -75,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     backup_parser.add_argument("source", type=Path, help="扫描源路径")
     backup_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
     _add_scan_options(backup_parser)
+
+    compare_source_parser = subparsers.add_parser(
+        "compare-source", help="将 HTML 冷备中的目录与本机目录比较并生成单文件 HTML 报告"
+    )
+    compare_source_parser.add_argument("archive", type=Path, help="历史 .html 冷备快照")
+    compare_source_parser.add_argument("archived_directory", help="冷备中选择的目录；根目录使用 .")
+    compare_source_parser.add_argument("source", type=Path, help="本机当前目录")
+    compare_source_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
+    _add_scan_options(compare_source_parser)
 
     compare_html_parser = subparsers.add_parser(
         "compare-html", help="比较两个 HTML 冷备快照并生成单文件 HTML 报告"
@@ -139,6 +152,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "backup":
             output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
             print(f"HTML 冷备快照已生成：{output}")
+            return 0
+        if args.command == "compare-source":
+            output = compare_html_directory_to_source(
+                args.archive,
+                args.archived_directory,
+                args.source,
+                args.output,
+                _scan_options(config.scan, args),
+            )
+            print(f"HTML 目录比较报告已生成：{output}")
             return 0
         if args.command == "compare-html":
             output = compare_html_archives(args.left, args.right, args.output)

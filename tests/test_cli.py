@@ -87,6 +87,7 @@ class CliTests(TestCase):
             old_archive = root / "old.html"
             new_archive = root / "new.html"
             comparison = root / "comparison.html"
+            source_comparison = root / "source-comparison.html"
 
             self.assertIn(
                 "HTML 冷备快照已生成", self._run(["backup", str(old_source), str(old_archive)])
@@ -95,13 +96,27 @@ class CliTests(TestCase):
                 "HTML 冷备快照已生成", self._run(["backup", str(new_source), str(new_archive)])
             )
             self.assertIn(
+                "HTML 目录比较报告已生成",
+                self._run(
+                    [
+                        "compare-source",
+                        str(old_archive),
+                        ".",
+                        str(new_source),
+                        str(source_comparison),
+                    ]
+                ),
+            )
+            self.assertIn(
                 "HTML 比较报告已生成",
                 self._run(["compare-html", str(old_archive), str(new_archive), str(comparison)]),
             )
 
             self.assertTrue(old_archive.is_file())
             self.assertTrue(new_archive.is_file())
+            self.assertTrue(source_comparison.is_file())
             self.assertTrue(comparison.is_file())
+            self.assertIn('data-status="ADDED"', source_comparison.read_text(encoding="utf-8"))
             self.assertIn('data-status="ADDED"', comparison.read_text(encoding="utf-8"))
 
     def _run(self, argv: list[str]) -> str:

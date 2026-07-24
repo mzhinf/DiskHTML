@@ -1,4 +1,4 @@
-"""PyQt6 图形界面基础窗口。"""
+"""DiskHTML 单文件 HTML 冷备图形界面。"""
 
 from __future__ import annotations
 
@@ -8,29 +8,65 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QApplication,
-    QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QLabel,
     QMainWindow,
     QProgressBar,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QToolBar,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
-from .compare import compare_scans, compare_source_to_scan
 from .config import ScanConfig, load_config
-from .database import Database
+from .html_archive import (
+    compare_html_directory_to_source,
+    create_html_backup,
+    html_backup_directories,
+)
 from .models import ScanProgress
-from .scanner import ScanController, Scanner
+from .scanner import ScanController
 
 
-class ScanThread(QThread):
-    """在后台线程运行扫描或恢复，避免阻塞 Qt 主事件循环。"""
+class HtmlBackupThread(QThread):
+    """在后台扫描路径并生成单文件 HTML 冷备，避免阻塞主界面。"""
+
+    completed = pyqtSignal(str)
+    progress = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self, source: Path, output: Path, config: ScanConfig, controller: ScanController
+    ) -> None:
+        super().__init__()
+        self.source = source
+        self.output = output
+        self.config = config
+        self.controller = controller
+
+    def run(self) -> None:
+        """调用 HTML 冷备服务并将进度、结果或错误发回主线程。"""
+
+        try:
+            output = create_html_backup(
+                self.source,
+                self.output,
+                self.config,
+                self.progress.emit,
+                self.controller,
+            )
+            self.completed.emit(str(output))
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.failed.emit(str(exc))
+
+
+class HtmlDirectoryCompareThread(QThread):
+    """在后台将 HTML 冷备中的已选目录与本机目录比较。"""
 
     completed = pyqtSignal(str)
     progress = pyqtSignal(object)
@@ -38,500 +74,332 @@ class ScanThread(QThread):
 
     def __init__(
         self,
-        database_path: Path,
-        source: Path | None,
+        archive: Path,
+        archived_directory: str,
+        source: Path,
+        output: Path,
+        config: ScanConfig,
         controller: ScanController,
-        config: ScanConfig | None = None,
-        resume_scan_id: str | None = None,
-    ):
+    ) -> None:
         super().__init__()
-        self.database_path = database_path
+        self.archive = archive
+        self.archived_directory = archived_directory
         self.source = source
+        self.output = output
         self.config = config
         self.controller = controller
-        self.resume_scan_id = resume_scan_id
 
     def run(self) -> None:
-        """在后台调用扫描或恢复服务，并通过信号返回结果。"""
+        """扫描本机目录并生成单文件 HTML 比较报告。"""
 
         try:
-            with Database(self.database_path) as database:
-                scanner = Scanner(database, self.progress.emit)
-                if self.resume_scan_id is not None:
-                    scanner.resume(self.resume_scan_id, self.controller)
-                    self.completed.emit(self.resume_scan_id)
-                    return
-                if self.source is None or self.config is None:
-                    raise RuntimeError("扫描线程缺少源路径或配置。")
-                self.completed.emit(scanner.start(self.source, self.config, self.controller))
+            output = compare_html_directory_to_source(
+                self.archive,
+                self.archived_directory,
+                self.source,
+                self.output,
+                self.config,
+                self.progress.emit,
+                self.controller,
+            )
+            self.completed.emit(str(output))
         except (OSError, RuntimeError, ValueError) as exc:
             self.failed.emit(str(exc))
 
 
-class CompareThread(QThread):
-    """在后台线程比较两个已完成扫描，避免阻塞 Qt 主事件循环。"""
+class ArchiveDirectoryDialog(QDialog):
+    """展示 HTML 冷备目录树并让用户选择一个历史目录。"""
 
-    completed = pyqtSignal(str)
-    failed = pyqtSignal(str)
+    def __init__(self, archive: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("从 HTML 冷备选择目录")
+        self.resize(620, 480)
+        self._tree = QTreeWidget(self)
+        self._tree.setHeaderLabel(f"冷备目录：{archive.name}")
+        self._build_tree(html_backup_directories(archive))
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._tree)
+        layout.addWidget(buttons)
 
-    def __init__(self, database_path: Path, left_scan_id: str, right_scan_id: str):
-        super().__init__()
-        self.database_path = database_path
-        self.left_scan_id = left_scan_id
-        self.right_scan_id = right_scan_id
+    def selected_directory(self) -> str | None:
+        """返回选中目录；根目录使用空字符串。"""
 
-    def run(self) -> None:
-        """调用既有比较服务并通过信号返回比较任务标识。"""
+        item = self._tree.currentItem()
+        if item is None:
+            return None
+        value = item.data(0, Qt.ItemDataRole.UserRole)
+        return str(value) if value is not None else None
 
-        try:
-            with Database(self.database_path) as database:
-                self.completed.emit(compare_scans(database, self.left_scan_id, self.right_scan_id))
-        except (OSError, RuntimeError, ValueError) as exc:
-            self.failed.emit(str(exc))
+    def _build_tree(self, directories: tuple[str, ...]) -> None:
+        """将相对目录清单渲染为可选择的树，保留每项的完整相对路径。"""
 
-
-class CompareSourceThread(QThread):
-    """在后台扫描当前目录并与已完成快照比较。"""
-
-    completed = pyqtSignal(str)
-    failed = pyqtSignal(str)
-
-    def __init__(
-        self, database_path: Path, source: Path, historical_scan_id: str, config: ScanConfig
-    ):
-        super().__init__()
-        self.database_path = database_path
-        self.source = source
-        self.historical_scan_id = historical_scan_id
-        self.config = config
-
-    def run(self) -> None:
-        """调用当前路径与历史快照的比较服务。"""
-
-        try:
-            with Database(self.database_path) as database:
-                self.completed.emit(
-                    compare_source_to_scan(
-                        database, str(self.source), self.historical_scan_id, self.config
-                    )
-                )
-        except (OSError, RuntimeError, ValueError) as exc:
-            self.failed.emit(str(exc))
+        root = QTreeWidgetItem(self._tree, ["冷备根目录"])
+        root.setData(0, Qt.ItemDataRole.UserRole, "")
+        items = {"": root}
+        for directory in directories:
+            if not directory:
+                continue
+            parent_path = ""
+            for part in directory.split("/"):
+                current_path = f"{parent_path}/{part}".strip("/")
+                if current_path not in items:
+                    item = QTreeWidgetItem(items[parent_path], [part])
+                    item.setData(0, Qt.ItemDataRole.UserRole, current_path)
+                    items[current_path] = item
+                parent_path = current_path
+        self._tree.expandToDepth(1)
+        self._tree.setCurrentItem(root)
 
 
 class MainWindow(QMainWindow):
-    """展示项目扫描快照的非阻塞 GUI 主窗口。"""
+    """提供 HTML 冷备、目录选择和本机目录比较工作流。"""
 
-    def __init__(self, database_path: Path | None = None):
+    def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("DiskHTML")
-        self.resize(900, 500)
-        self._database_path: Path | None = None
+        self.setWindowTitle("DiskHTML - HTML 冷备")
+        self.resize(760, 360)
         self._scan_config = ScanConfig()
-        self._last_compare_id: str | None = None
-        self._table = QTableWidget(0, 5, self)
-        self._table.setHorizontalHeaderLabels(["标识", "状态", "源路径", "已 Hash", "完成时间"])
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setCentralWidget(self._table)
+        self._setup_central_content()
+        self._setup_toolbar()
         self._scan_progress_bar = QProgressBar(self)
         self._scan_progress_bar.setRange(0, 0)
         self._scan_progress_bar.setTextVisible(False)
         self._scan_progress_bar.hide()
         self.statusBar().addPermanentWidget(self._scan_progress_bar)
-        toolbar = QToolBar("项目", self)
+        self.statusBar().showMessage("选择“生成冷备 HTML”开始。")
+
+    def _setup_central_content(self) -> None:
+        """创建说明性主界面，避免暴露 SQLite 项目管理功能。"""
+
+        content = QWidget(self)
+        layout = QVBoxLayout(content)
+        title = QLabel("将目录保存为可离线打开的 HTML 冷备", content)
+        title.setStyleSheet("font-size: 20px; font-weight: 600;")
+        description = QLabel(
+            "1. 生成冷备 HTML：选择目录和保存位置，完成后得到一个可搜索的离线快照。"
+            "\n2. 比较冷备目录：从 HTML 冷备树选择历史目录，再选择本机目录。"
+            "\n扫描期间使用临时索引保障可靠性；交付物始终是单个 HTML 文件。",
+            content,
+        )
+        description.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(description)
+        layout.addStretch()
+        self.setCentralWidget(content)
+
+    def _setup_toolbar(self) -> None:
+        """仅保留 HTML 工作流真正需要的操作入口。"""
+
+        toolbar = QToolBar("HTML 冷备", self)
         self.addToolBar(toolbar)
-        open_button = QPushButton("打开项目", self)
-        open_button.clicked.connect(self.open_project)
-        toolbar.addWidget(open_button)
-        create_button = QPushButton("新建项目", self)
-        create_button.clicked.connect(self.create_project)
-        toolbar.addWidget(create_button)
-        scan_button = QPushButton("扫描路径", self)
-        scan_button.clicked.connect(self.start_scan)
-        config_button = QPushButton("\u626b\u63cf\u914d\u7f6e", self)
-        config_button.clicked.connect(self.load_scan_config)
-        toolbar.addWidget(config_button)
-        toolbar.addWidget(scan_button)
-        file_scan_button = QPushButton("扫描文件", self)
-        file_scan_button.clicked.connect(self.start_file_scan)
-        toolbar.addWidget(file_scan_button)
-        report_button = QPushButton("\u6253\u5f00\u62a5\u544a", self)
-        report_button.clicked.connect(self.open_report)
-        toolbar.addWidget(report_button)
         for label, callback in (
-            ("暂停", self.pause_scan),
-            ("继续", self.resume_scan),
-            ("取消", self.cancel_scan),
+            ("生成冷备 HTML", self.create_backup),
+            ("比较冷备目录", self.compare_archive_directory),
+            ("打开报告", self.open_report),
+            ("扫描配置", self.load_scan_config),
         ):
             button = QPushButton(label, self)
             button.clicked.connect(callback)
             toolbar.addWidget(button)
-        refresh_button = QPushButton("刷新", self)
-        refresh_button.clicked.connect(self.refresh_project)
-        toolbar.addWidget(refresh_button)
-        recover_button = QPushButton("恢复任务", self)
-        recover_button.clicked.connect(self.recover_selected_scan)
-        toolbar.addWidget(recover_button)
-        error_button = QPushButton("查看错误", self)
-        error_button.clicked.connect(self.show_selected_errors)
-        toolbar.addWidget(error_button)
-        compare_button = QPushButton("比较选中", self)
-        compare_button.clicked.connect(self.compare_selected_scans)
-        toolbar.addWidget(compare_button)
-        directory_compare_button = QPushButton("比较目录", self)
-        directory_compare_button.clicked.connect(self.compare_directory_to_selected_scan)
-        toolbar.addWidget(directory_compare_button)
-        compare_result_button = QPushButton("查看比较", self)
-        compare_result_button.clicked.connect(self.show_last_compare)
-        toolbar.addWidget(compare_result_button)
-        if database_path is not None:
-            self.load_project(database_path)
+        toolbar.addSeparator()
+        for label, callback in (
+            ("暂停", self.pause_active_scan),
+            ("继续", self.resume_active_scan),
+            ("取消", self.cancel_active_scan),
+        ):
+            button = QPushButton(label, self)
+            button.clicked.connect(callback)
+            toolbar.addWidget(button)
 
-    def create_project(self) -> None:
-        """选择新路径并创建空的 SQLite 项目。"""
+    def create_backup(self) -> None:
+        """选择目录和 HTML 输出位置后启动后台冷备。"""
 
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "新建项目", filter="SQLite 数据库 (*.sqlite3)"
+        source = QFileDialog.getExistingDirectory(self, "选择需要冷备的目录")
+        if not source:
+            return
+        source_path = Path(source)
+        output, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存 HTML 冷备",
+            str(source_path.parent / f"{source_path.name}-冷备.html"),
+            "HTML 文件 (*.html)",
         )
-        if filename:
-            path = Path(filename)
-            if path.exists():
-                self.statusBar().showMessage("项目文件已存在，未覆盖。", 5_000)
-                return
-            with Database(path):
-                pass
-            self.load_project(path)
+        if output:
+            self._start_backup(source_path, Path(output))
 
-    def open_project(self) -> None:
-        """通过文件选择器打开已有 SQLite 项目。"""
+    def _start_backup(self, source: Path, output: Path) -> None:
+        """创建带可暂停控制器的后台 HTML 冷备线程。"""
+
+        if self._active_scan_running():
+            self.statusBar().showMessage("已有扫描任务正在运行。", 5_000)
+            return
+        controller = ScanController()
+        thread = HtmlBackupThread(source, output, self._scan_config, controller)
+        thread.progress.connect(self._scan_progress)
+        thread.completed.connect(self._backup_completed)
+        thread.failed.connect(self._scan_failed)
+        self._set_active_scan(thread, controller)
+        self._scan_progress_bar.show()
+        self.statusBar().showMessage("正在后台生成 HTML 冷备。")
+        thread.start()
+
+    def compare_archive_directory(self) -> None:
+        """从 HTML 冷备树选择目录，并与用户选择的本机目录比较。"""
 
         filename, _ = QFileDialog.getOpenFileName(
-            self, "打开项目", filter="SQLite 数据库 (*.sqlite3);;所有文件 (*)"
+            self, "选择历史 HTML 冷备", filter="HTML 文件 (*.html)"
         )
-        if filename:
-            self.load_project(Path(filename))
+        if not filename:
+            return
+        archive = Path(filename)
+        try:
+            dialog = ArchiveDirectoryDialog(archive, self)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"无法读取 HTML 冷备：{exc}", 10_000)
+            return
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        archived_directory = dialog.selected_directory()
+        if archived_directory is None:
+            return
+        source = QFileDialog.getExistingDirectory(self, "选择需要比较的本机目录")
+        if not source:
+            return
+        output, _ = QFileDialog.getSaveFileName(
+            self, "保存 HTML 比较报告", filter="HTML 文件 (*.html)"
+        )
+        if output:
+            self._start_compare(archive, archived_directory, Path(source), Path(output))
+
+    def _start_compare(
+        self, archive: Path, archived_directory: str, source: Path, output: Path
+    ) -> None:
+        """创建后台“冷备目录对本机目录”比较线程。"""
+
+        if self._active_scan_running():
+            self.statusBar().showMessage("已有扫描任务正在运行。", 5_000)
+            return
+        controller = ScanController()
+        thread = HtmlDirectoryCompareThread(
+            archive, archived_directory, source, output, self._scan_config, controller
+        )
+        thread.progress.connect(self._scan_progress)
+        thread.completed.connect(self._compare_completed)
+        thread.failed.connect(self._scan_failed)
+        self._set_active_scan(thread, controller)
+        self._scan_progress_bar.show()
+        self.statusBar().showMessage("正在扫描本机目录并生成 HTML 比较报告。")
+        thread.start()
+
+    def _set_active_scan(self, thread: QThread, controller: ScanController) -> None:
+        """保存当前可暂停、继续或取消的后台扫描任务。"""
+
+        self._active_scan_thread = thread
+        self._active_scan_controller = controller
+
+    def _active_scan_running(self) -> bool:
+        """判断当前是否有可控制的扫描任务。"""
+
+        thread = getattr(self, "_active_scan_thread", None)
+        return thread is not None and thread.isRunning()
+
+    def open_report(self) -> None:
+        """用系统默认浏览器打开冷备或比较 HTML。"""
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "打开 HTML 报告", filter="HTML 文件 (*.html)"
+        )
+        if filename and not QDesktopServices.openUrl(QUrl.fromLocalFile(filename)):
+            self.statusBar().showMessage("无法打开 HTML 报告。", 5_000)
 
     def load_scan_config(self) -> None:
-        """\u4ece TOML \u6587\u4ef6\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e\u53ca\u6392\u9664\u89c4\u5219\u3002"""
+        """从 TOML 文件加载扫描并发、排除规则和摘要选项。"""
 
         filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e",
-            filter="TOML \u914d\u7f6e (*.toml);;\u6240\u6709\u6587\u4ef6 (*)",
+            self, "加载扫描配置", filter="TOML 配置 (*.toml);;所有文件 (*)"
         )
         if not filename:
             return
         try:
             self._scan_config = load_config(Path(filename)).scan
         except (OSError, ValueError) as exc:
-            self.statusBar().showMessage(f"\u914d\u7f6e\u52a0\u8f7d\u5931\u8d25\uff1a{exc}", 10_000)
+            self.statusBar().showMessage(f"扫描配置加载失败：{exc}", 10_000)
             return
         self.statusBar().showMessage(
-            f"\u5df2\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e\uff1a{self._scan_config.workers} \u4e2a\u5de5\u4f5c\u7ebf\u7a0b\uff0c"
-            f"{len(self._scan_config.exclude_dirs)} \u6761\u76ee\u5f55\u6392\u9664\u89c4\u5219\u3002",
+            f"已加载扫描配置：{self._scan_config.workers} 个工作线程，"
+            f"{len(self._scan_config.exclude_dirs)} 条目录排除规则。",
             10_000,
         )
 
-    def open_report(self) -> None:
-        """\u9009\u62e9\u5e76\u4ea4\u7ed9\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u6253\u5f00\u79bb\u7ebf\u62a5\u544a\u3002"""
+    def _active_scan_control(self, action: str) -> None:
+        """向当前扫描发送暂停、继续或取消请求。"""
 
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "\u6253\u5f00\u79bb\u7ebf\u62a5\u544a", filter="HTML \u62a5\u544a (*.html)"
-        )
-        if filename and not QDesktopServices.openUrl(QUrl.fromLocalFile(filename)):
-            self.statusBar().showMessage("\u65e0\u6cd5\u6253\u5f00\u62a5\u544a\u3002", 5_000)
-
-    def start_scan(self) -> None:
-        """选择目录后在后台启动扫描。"""
-
-        source = QFileDialog.getExistingDirectory(self, "选择扫描目录")
-        if source:
-            self._start_source_scan(Path(source))
-
-    def start_file_scan(self) -> None:
-        """选择单个文件后在后台启动扫描。"""
-
-        filename, _ = QFileDialog.getOpenFileName(self, "选择扫描文件")
-        if filename:
-            self._start_source_scan(Path(filename))
-
-    def _start_source_scan(self, source: Path) -> None:
-        """以统一的后台线程启动指定文件或目录扫描。"""
-
-        if self._database_path is None:
-            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        if hasattr(self, "_scan_thread") and self._scan_thread.isRunning():
-            self.statusBar().showMessage("已有扫描正在运行。", 5_000)
-            return
-        self._scan_controller = ScanController()
-        self._scan_thread = ScanThread(
-            self._database_path, source, self._scan_controller, self._scan_config
-        )
-        self._scan_thread.completed.connect(self._scan_completed)
-        self._scan_thread.failed.connect(self._scan_failed)
-        self._scan_thread.progress.connect(self._scan_progress)
-        self._scan_progress_bar.setRange(0, 0)
-        self._scan_progress_bar.show()
-        self.statusBar().showMessage("扫描正在后台运行。")
-        self._scan_thread.start()
-
-    def _scan_control(self, action: str) -> None:
-        """向当前后台扫描发送控制请求。"""
-
-        controller = getattr(self, "_scan_controller", None)
-        if controller is None:
-            self.statusBar().showMessage("当前没有运行中的扫描。", 5_000)
+        controller = getattr(self, "_active_scan_controller", None)
+        if controller is None or not self._active_scan_running():
+            self.statusBar().showMessage("当前没有可控制的扫描。", 5_000)
             return
         getattr(controller, action)()
-        label = {"pause": "暂停", "resume": "继续", "cancel": "取消"}[action]
-        self.statusBar().showMessage(f"已请求{label}扫描。", 5_000)
+        labels = {"pause": "暂停", "resume": "继续", "cancel": "取消"}
+        self.statusBar().showMessage(f"已请求{labels[action]}扫描。", 5_000)
 
-    def _selected_scan_id(self) -> str | None:
-        """返回表格中当前选中的扫描任务标识。"""
+    def pause_active_scan(self) -> None:
+        """请求在下一个文件边界暂停当前扫描。"""
 
-        row = self._table.currentRow()
-        item = self._table.item(row, 0) if row >= 0 else None
-        return item.text() if item is not None else None
+        self._active_scan_control("pause")
 
-    def recover_selected_scan(self) -> None:
-        """在后台恢复当前选中的暂停、取消或失败扫描任务。"""
+    def resume_active_scan(self) -> None:
+        """请求继续已暂停的扫描。"""
 
-        if self._database_path is None:
-            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        if hasattr(self, "_scan_thread") and self._scan_thread.isRunning():
-            self.statusBar().showMessage("已有扫描正在运行。", 5_000)
-            return
-        scan_id = self._selected_scan_id()
-        if scan_id is None:
-            self.statusBar().showMessage("请先在任务列表中选择要恢复的扫描。", 5_000)
-            return
-        with Database.open_existing(self._database_path) as database:
-            scan = database.get_scan(scan_id)
-        if scan is None or scan["status"] not in {"PAUSED", "CANCELLED", "FAILED"}:
-            self.statusBar().showMessage("只能恢复已暂停、取消或失败的扫描任务。", 5_000)
-            return
-        self._scan_controller = ScanController()
-        self._scan_thread = ScanThread(
-            self._database_path, None, self._scan_controller, resume_scan_id=scan_id
-        )
-        self._scan_thread.completed.connect(self._scan_completed)
-        self._scan_thread.failed.connect(self._scan_failed)
-        self._scan_thread.progress.connect(self._scan_progress)
-        self._scan_progress_bar.setRange(0, 0)
-        self._scan_progress_bar.show()
-        self.statusBar().showMessage(f"正在后台恢复扫描：{scan_id}")
-        self._scan_thread.start()
+        self._active_scan_control("resume")
 
-    def compare_selected_scans(self) -> None:
-        """在后台比较任务表中选中的两个已完成扫描快照。"""
+    def cancel_active_scan(self) -> None:
+        """请求取消当前扫描。"""
 
-        if self._database_path is None:
-            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        selected = [index.data() for index in self._table.selectionModel().selectedRows(0)]
-        if len(selected) != 2:
-            self.statusBar().showMessage("请在任务列表中选中两个扫描进行比较。", 5_000)
-            return
-        if hasattr(self, "_compare_thread") and self._compare_thread.isRunning():
-            self.statusBar().showMessage("已有比较正在运行。", 5_000)
-            return
-        with Database.open_existing(self._database_path) as database:
-            scans = [database.get_scan(scan_id) for scan_id in selected]
-        if any(scan is None or scan["status"] != "COMPLETED" for scan in scans):
-            self.statusBar().showMessage("只能比较两个已完成的扫描任务。", 5_000)
-            return
-        self._compare_thread = CompareThread(self._database_path, selected[0], selected[1])
-        self._compare_thread.completed.connect(self._compare_completed)
-        self._compare_thread.failed.connect(self._compare_failed)
-        self.statusBar().showMessage("比较正在后台运行。")
-        self._compare_thread.start()
-
-    def show_last_compare(self) -> None:
-        """展示最近完成比较任务的明细，并按状态筛选。"""
-
-        if self._database_path is None or self._last_compare_id is None:
-            self.statusBar().showMessage("请先完成一次比较。", 5_000)
-            return
-        with Database.open_existing(self._database_path) as database:
-            entries = [
-                dict(entry) for entry in database.iter_compare_entries(self._last_compare_id)
-            ]
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"比较结果：{self._last_compare_id}")
-        dialog.resize(900, 420)
-        layout = QVBoxLayout(dialog)
-        filter_box = QComboBox(dialog)
-        filter_box.setObjectName("compare_status_filter")
-        statuses = sorted({str(entry["status"]) for entry in entries})
-        filter_box.addItems(["全部", *statuses])
-        table = QTableWidget(len(entries), 3, dialog)
-        table.setObjectName("compare_result_table")
-        table.setHorizontalHeaderLabels(["路径", "状态", "差异说明"])
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        for row, entry in enumerate(entries):
-            values = [entry["relative_path"], entry["status"], entry["error_message"] or ""]
-            for column, value in enumerate(values):
-                table.setItem(row, column, QTableWidgetItem(str(value)))
-
-        def apply_filter(status: str) -> None:
-            for row in range(table.rowCount()):
-                table.setRowHidden(row, status != "全部" and table.item(row, 1).text() != status)
-
-        filter_box.currentTextChanged.connect(apply_filter)
-        layout.addWidget(filter_box)
-        layout.addWidget(table)
-        self._compare_dialog = dialog
-        dialog.exec()
-
-    def compare_directory_to_selected_scan(self) -> None:
-        """选择当前目录并与一个已完成历史快照在后台比较。"""
-
-        if self._database_path is None:
-            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        selected = [index.data() for index in self._table.selectionModel().selectedRows(0)]
-        if len(selected) != 1:
-            self.statusBar().showMessage("请选择一个已完成扫描作为历史快照。", 5_000)
-            return
-        with Database.open_existing(self._database_path) as database:
-            scan = database.get_scan(selected[0])
-        if scan is None or scan["status"] != "COMPLETED":
-            self.statusBar().showMessage("只能与已完成的历史扫描进行目录比较。", 5_000)
-            return
-        source = QFileDialog.getExistingDirectory(self, "选择当前比较目录")
-        if not source:
-            return
-        if hasattr(self, "_compare_thread") and self._compare_thread.isRunning():
-            self.statusBar().showMessage("已有比较正在运行。", 5_000)
-            return
-        self._compare_thread = CompareSourceThread(
-            self._database_path, Path(source), selected[0], self._scan_config
-        )
-        self._compare_thread.completed.connect(self._compare_completed)
-        self._compare_thread.failed.connect(self._compare_failed)
-        self.statusBar().showMessage("目录比较正在后台运行。")
-        self._compare_thread.start()
-
-    def _compare_completed(self, compare_id: str) -> None:
-        """显示后台比较完成提示。"""
-
-        self._last_compare_id = compare_id
-        self.statusBar().showMessage(f"比较已完成：{compare_id}", 10_000)
-
-    def _compare_failed(self, message: str) -> None:
-        """显示后台比较失败原因。"""
-
-        self.statusBar().showMessage(f"比较失败：{message}", 10_000)
-
-    def show_selected_errors(self) -> None:
-        """显示当前选中扫描任务中已持久化的错误列表。"""
-
-        if self._database_path is None:
-            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
-            return
-        scan_id = self._selected_scan_id()
-        if scan_id is None:
-            self.statusBar().showMessage("请先在任务列表中选择扫描任务。", 5_000)
-            return
-        with Database.open_existing(self._database_path) as database:
-            errors = [dict(error) for error in database.iter_errors(scan_id)]
-        if not errors:
-            self.statusBar().showMessage("所选扫描任务没有已记录的错误。", 5_000)
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"扫描错误：{scan_id}")
-        dialog.resize(800, 360)
-        table = QTableWidget(len(errors), 3, dialog)
-        table.setObjectName("scan_error_table")
-        table.setHorizontalHeaderLabels(["路径", "错误代码", "错误说明"])
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        for row, error in enumerate(errors):
-            for column, value in enumerate(
-                [error["relative_path"] or "", error["error_code"], error["error_message"]]
-            ):
-                table.setItem(row, column, QTableWidgetItem(str(value)))
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(table)
-        self._error_dialog = dialog
-        dialog.exec()
-
-    def pause_scan(self) -> None:
-        """请求在下一个文件边界暂停扫描。"""
-
-        self._scan_control("pause")
-
-    def resume_scan(self) -> None:
-        """请求继续已暂停扫描。"""
-
-        self._scan_control("resume")
-
-    def cancel_scan(self) -> None:
-        """请求取消扫描并保留已提交结果。"""
-
-        self._scan_control("cancel")
+        self._active_scan_control("cancel")
 
     def _scan_progress(self, progress: ScanProgress) -> None:
-        """\u5728 GUI \u4e3b\u7ebf\u7a0b\u5c55\u793a\u540e\u53f0\u626b\u63cf\u7684\u5b9e\u65f6\u5feb\u7167\u3002"""
+        """在状态栏显示冷备或比较扫描的实时进度。"""
 
         self._scan_progress_bar.show()
         eta_text = (
-            "\u672a\u77e5"
+            "未知"
             if progress.estimated_remaining_seconds is None
             else f"{progress.estimated_remaining_seconds:.0f} s"
         )
         self.statusBar().showMessage(
-            f"\u626b\u63cf\u4e2d\uff1a{progress.files_completed}/{progress.files_seen} \u4e2a\u6587\u4ef6\uff0c"
-            f"{progress.bytes_hashed / 1024 / 1024:.1f} MiB\uff0c{progress.bytes_per_second / 1024 / 1024:.1f} MiB/s\uff0c"
-            f"ETA {eta_text}\uff0c{progress.current_path or ''}"
+            f"扫描中：{progress.files_completed}/{progress.files_seen} 个文件，"
+            f"{progress.bytes_hashed / 1024 / 1024:.1f} MiB，"
+            f"{progress.bytes_per_second / 1024 / 1024:.1f} MiB/s，"
+            f"ETA {eta_text}，{progress.current_path or ''}"
         )
 
-    def _scan_completed(self, scan_id: str) -> None:
-        """\u63a5\u6536\u540e\u53f0\u626b\u63cf\u5b8c\u6210\u4fe1\u53f7\u5e76\u5237\u65b0\u4efb\u52a1\u5217\u8868\u3002"""
+    def _backup_completed(self, output: str) -> None:
+        """显示 HTML 冷备生成完成信息。"""
 
-        self.refresh_project()
         self._scan_progress_bar.hide()
-        self.statusBar().showMessage(f"扫描已完成：{scan_id}", 10_000)
+        self.statusBar().showMessage(f"HTML 冷备已生成：{output}", 10_000)
+
+    def _compare_completed(self, output: str) -> None:
+        """显示 HTML 比较报告生成完成信息。"""
+
+        self._scan_progress_bar.hide()
+        self.statusBar().showMessage(f"HTML 比较报告已生成：{output}", 10_000)
 
     def _scan_failed(self, message: str) -> None:
-        """显示后台扫描失败的中文原因。"""
+        """显示冷备或比较扫描失败原因。"""
 
         self._scan_progress_bar.hide()
         self.statusBar().showMessage(f"扫描失败：{message}", 10_000)
 
-    def refresh_project(self) -> None:
-        """重新读取当前项目，供后台任务完成后更新列表。"""
-
-        if self._database_path is not None:
-            self.load_project(self._database_path)
-
-    def load_project(self, path: Path) -> None:
-        """读取数据库任务列表，不在界面层复制核心业务逻辑。"""
-
-        with Database.open_existing(path) as database:
-            scans = [dict(scan) for scan in database.iter_scans()]
-        self._database_path = path
-        self._table.setRowCount(len(scans))
-        for row, scan in enumerate(scans):
-            values = [
-                scan["id"],
-                scan["status"],
-                scan["source_path"],
-                str(scan["files_hashed"]),
-                scan["completed_at"] or "",
-            ]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                self._table.setItem(row, column, item)
-        self.setWindowTitle(f"DiskHTML - {path}")
-
 
 def main() -> int:
-    """启动 GUI 事件循环。"""
+    """启动 HTML 冷备图形界面。"""
 
     application = QApplication(sys.argv)
     window = MainWindow()

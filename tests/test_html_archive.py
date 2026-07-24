@@ -5,7 +5,13 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from diskhtml.config import ScanConfig
-from diskhtml.html_archive import compare_html_archives, create_html_backup, read_html_backup
+from diskhtml.html_archive import (
+    compare_html_archives,
+    compare_html_directory_to_source,
+    create_html_backup,
+    html_backup_directories,
+    read_html_backup,
+)
 
 
 class HtmlArchiveTests(TestCase):
@@ -39,6 +45,9 @@ class HtmlArchiveTests(TestCase):
 
         self.assertEqual(payload["kind"], "scan")
         self.assertEqual(payload["statistics"]["total_files"], 3)
+        self.assertIn('id="tree"', archive_text)
+        self.assertIn("createTree()", archive_text)
+        self.assertIn("SHA-256", archive_text)
         self.assertIn('id="filter"', archive_text)
         self.assertIn('id="rows"', archive_text)
         self.assertIn("显示更多", archive_text)
@@ -49,6 +58,42 @@ class HtmlArchiveTests(TestCase):
         self.assertIn('"MISSING":1', comparison_text)
         self.assertIn('data-status="CHANGED"', comparison_text)
         self.assertTrue(comparison_exists)
+
+    def test_selected_html_directory_compares_to_local_directory(self) -> None:
+        """冷备树中选定的目录应重定根后与本机目录比较。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            historical = root / "historical"
+            current = root / "current"
+            historical.mkdir()
+            current.mkdir()
+            (historical / "selected").mkdir()
+            (historical / "selected" / "same.txt").write_text("相同", encoding="utf-8")
+            (historical / "selected" / "changed.txt").write_text("旧内容", encoding="utf-8")
+            (historical / "outside.txt").write_text("不参与比较", encoding="utf-8")
+            (current / "same.txt").write_text("相同", encoding="utf-8")
+            (current / "changed.txt").write_text("新内容", encoding="utf-8")
+            (current / "added.txt").write_text("新增", encoding="utf-8")
+            archive = create_html_backup(
+                historical, root / "historical.html", ScanConfig(workers=1, queue_size=1)
+            )
+            comparison = compare_html_directory_to_source(
+                archive,
+                "selected",
+                current,
+                root / "comparison.html",
+                ScanConfig(workers=1, queue_size=1),
+            )
+            text = comparison.read_text(encoding="utf-8")
+            directories = html_backup_directories(archive)
+
+        self.assertIn("selected", directories)
+        self.assertIn('"selected_directory":"selected"', text)
+        self.assertIn('"MATCH":1', text)
+        self.assertIn('"CHANGED":1', text)
+        self.assertIn('"ADDED":1', text)
+        self.assertNotIn("outside.txt", text)
 
     def test_backup_rejects_non_html_or_existing_output(self) -> None:
         """用户交付物必须是新建的 .html 文件，避免覆盖既有冷备。"""

@@ -6,7 +6,7 @@
 .\.venv\Scripts\python.exe -m diskhtml --help
 ~~~
 
-## 默认工作流：HTML 冷备和比较
+## 默认工作流：HTML 冷备和目录比较
 
 扫描目录或单个文件，并直接生成一个可视化 HTML 冷备：
 
@@ -14,13 +14,15 @@
 .\.venv\Scripts\python.exe -m diskhtml backup D:\资料 .\资料冷备.html --workers 2 --queue-size 32 --chunk-size 4194304 --sha512
 ~~~
 
-比较两个冷备 HTML，并生成一个可视化 HTML 比较报告：
+从历史冷备 HTML 的文件树选择一个目录，并将其和本机目录比较：
 
 ~~~powershell
-.\.venv\Scripts\python.exe -m diskhtml compare-html .\旧副本.html .\新副本.html .\比较报告.html
+.\.venv\Scripts\python.exe -m diskhtml compare-source .\资料冷备.html 资料\照片 E:\当前照片 .\照片比较.html
 ~~~
 
-输出 HTML 必须不存在。冷备和比较报告都可用浏览器离线打开，提供统计、筛选、分页和条目详情。扫描临时使用 SQLite，但完成后自动清理；用户不需要保存数据库。
+若比较冷备根目录，第二个位置参数使用 `.`。输出 HTML 必须不存在。冷备和比较报告都可用浏览器离线打开，提供统计、筛选、分页和条目详情。扫描临时使用 SQLite，但完成后自动清理；用户不需要保存数据库。
+
+`compare-html` 仍保留为兼容旧自动化脚本的高级命令；DiskHTML.exe 的默认界面和命令不提供该入口。EXE 的完整操作见 [DiskHTML.exe 使用指南](diskhtml-exe-guide.md)。
 
 ## 高级 SQLite 项目工作流
 

@@ -1,7 +1,6 @@
-"""PyQt6 项目窗口测试。"""
+"""HTML 冷备图形界面测试。"""
 
 import os
-from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -10,17 +9,16 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QItemSelectionModel
-from PyQt6.QtWidgets import QApplication, QComboBox, QTableWidget
+from PyQt6.QtWidgets import QApplication, QPushButton, QTreeWidget
 
 from diskhtml.config import ScanConfig
-from diskhtml.database import Database
-from diskhtml.models import ScanProgress, ScanStatus
-from diskhtml.ui import MainWindow
+from diskhtml.html_archive import create_html_backup
+from diskhtml.models import ScanProgress
+from diskhtml.ui import ArchiveDirectoryDialog, MainWindow
 
 
 class UiTests(TestCase):
-    """验证项目窗口通过公共数据库接口读取任务。"""
+    """验证 GUI 只暴露 HTML 冷备和目录对本机目录比较工作流。"""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -28,23 +26,22 @@ class UiTests(TestCase):
 
         cls.application = QApplication.instance() or QApplication([])
 
-    def test_window_loads_scan_rows_from_project(self) -> None:
-        """打开项目后，表格应显示持久化扫描任务。"""
+    def test_window_only_exposes_html_workflow_actions(self) -> None:
+        """工具栏不应再出现 SQLite 项目和两份 HTML 比较入口。"""
 
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            with Database(path) as database:
-                scan_id = database.create_scan("DIRECTORY", "C:/资料", {})
-                database.set_scan_status(scan_id, ScanStatus.SCANNING)
-                database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
-            window = MainWindow(path)
-            self.assertEqual(window._table.rowCount(), 1)
-            self.assertEqual(window._table.item(0, 1).text(), "COMPLETED")
-            self.assertIn("archive.sqlite3", window.windowTitle())
-            window.close()
+        window = MainWindow()
+        labels = {button.text() for button in window.findChildren(QPushButton)}
+
+        self.assertTrue(
+            {"生成冷备 HTML", "比较冷备目录", "打开报告", "扫描配置", "暂停", "继续", "取消"}
+            <= labels
+        )
+        self.assertFalse({"新建项目", "打开项目", "扫描路径", "恢复任务", "比较 HTML"} & labels)
+        self.assertIn("HTML 冷备", window.windowTitle())
+        window.close()
 
     def test_open_report_uses_system_browser(self) -> None:
-        """\u9009\u62e9 HTML \u62a5\u544a\u540e\u5e94\u59d4\u6258\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u6253\u5f00\u672c\u5730\u6587\u4ef6\u3002"""
+        """选择 HTML 报告后应委托系统默认浏览器打开本地文件。"""
 
         report_path = Path.cwd() / "report.html"
         window = MainWindow()
@@ -60,7 +57,7 @@ class UiTests(TestCase):
         window.close()
 
     def test_scan_progress_updates_status_bar(self) -> None:
-        """\u626b\u63cf\u8fdb\u5ea6\u5feb\u7167\u5e94\u66f4\u65b0\u72b6\u6001\u680f\u5e76\u663e\u793a\u6307\u793a\u5668\u3002"""
+        """扫描进度应更新状态栏并显示指示器。"""
 
         window = MainWindow()
         window._scan_progress(
@@ -72,7 +69,7 @@ class UiTests(TestCase):
         window.close()
 
     def test_load_scan_config_uses_selected_toml(self) -> None:
-        """\u9009\u62e9\u914d\u7f6e\u6587\u4ef6\u540e\u5e94\u4f7f\u7528\u5176\u626b\u63cf\u4e0e\u6392\u9664\u89c4\u5219\u3002"""
+        """选择配置文件后应使用其中的扫描与排除规则。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             config_path = Path(directory) / "scan.toml"
@@ -86,185 +83,92 @@ class UiTests(TestCase):
                 window.load_scan_config()
             self.assertEqual(window._scan_config.workers, 4)
             self.assertEqual(window._scan_config.exclude_dirs, ("cache",))
-
-    def test_recover_selected_scan_starts_background_thread(self) -> None:
-        """选中已取消任务后应创建后台恢复线程。"""
-
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            with Database(path) as database:
-                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
-                database.set_scan_status(scan_id, ScanStatus.SCANNING)
-                database.set_scan_status(scan_id, ScanStatus.CANCELLED)
-            window = MainWindow(path)
-            window._table.selectRow(0)
-            with patch("diskhtml.ui.ScanThread") as thread_class:
-                window.recover_selected_scan()
-            self.assertEqual(thread_class.call_args.args[:2], (path, None))
-            self.assertEqual(thread_class.call_args.kwargs["resume_scan_id"], scan_id)
-            thread_class.return_value.start.assert_called_once_with()
             window.close()
 
-    def test_show_selected_errors_displays_persisted_errors(self) -> None:
-        """选中含错误的扫描时应显示已持久化的错误明细。"""
+    def test_create_backup_starts_html_background_thread(self) -> None:
+        """选择目录和输出后应创建 HTML 冷备后台线程。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            with Database(path) as database:
-                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
-                database.record_error(scan_id, "missing.txt", "READ_ERROR", "无法读取文件")
-            window = MainWindow(path)
-            window._table.selectRow(0)
-            with patch("diskhtml.ui.QDialog.exec", return_value=0):
-                window.show_selected_errors()
-            table = window._error_dialog.findChild(QTableWidget, "scan_error_table")
-            self.assertIsNotNone(table)
-            self.assertEqual(table.rowCount(), 1)
-            self.assertEqual(table.item(0, 1).text(), "READ_ERROR")
-            window.close()
-
-    def test_compare_selected_scans_starts_background_thread(self) -> None:
-        """选中两个完成快照后应创建后台比较线程。"""
-
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            with Database(path) as database:
-                left_id = database.create_scan("DIRECTORY", "C:/left", {})
-                database.set_scan_status(left_id, ScanStatus.SCANNING)
-                database.set_scan_status(left_id, ScanStatus.COMPLETED, completed=True)
-                right_id = database.create_scan("DIRECTORY", "C:/right", {})
-                database.set_scan_status(right_id, ScanStatus.SCANNING)
-                database.set_scan_status(right_id, ScanStatus.COMPLETED, completed=True)
-            window = MainWindow(path)
-            window._table.selectRow(0)
-            window._table.selectionModel().select(
-                window._table.model().index(1, 0),
-                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
-            )
-            with patch("diskhtml.ui.CompareThread") as thread_class:
-                window.compare_selected_scans()
-            self.assertEqual(thread_class.call_args.args[0], path)
-            self.assertEqual(set(thread_class.call_args.args[1:]), {left_id, right_id})
-            thread_class.return_value.start.assert_called_once_with()
-            window.close()
-
-    def test_show_last_compare_filters_persisted_entries(self) -> None:
-        """比较结果对话框应显示并按状态筛选持久化条目。"""
-
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            with Database(path) as database:
-                compare_id = database.create_compare("scan:left", "scan:right")
-                database.set_compare_status(compare_id, "RUNNING")
-                database.record_compare_entry(
-                    compare_id, {"relative_path": "added.txt", "status": "ADDED"}
-                )
-                database.record_compare_entry(
-                    compare_id, {"relative_path": "same.txt", "status": "MATCH"}
-                )
-                database.set_compare_status(compare_id, "COMPLETED", {"ADDED": 1, "MATCH": 1}, True)
-            window = MainWindow(path)
-            window._last_compare_id = compare_id
-            with patch("diskhtml.ui.QDialog.exec", return_value=0):
-                window.show_last_compare()
-            table = window._compare_dialog.findChild(QTableWidget, "compare_result_table")
-            filter_box = window._compare_dialog.findChild(QComboBox, "compare_status_filter")
-            self.assertEqual(table.rowCount(), 2)
-            filter_box.setCurrentText("ADDED")
-            self.assertFalse(table.isRowHidden(0))
-            self.assertTrue(table.isRowHidden(1))
-            window.close()
-
-    def test_start_file_scan_uses_background_thread(self) -> None:
-        """选择单个文件后应创建后台扫描线程。"""
-
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            source = Path(directory) / "sample.bin"
-            source.write_bytes(b"content")
-            with Database(path):
-                pass
-            window = MainWindow(path)
-            with (
-                patch("diskhtml.ui.QFileDialog.getOpenFileName", return_value=(str(source), "")),
-                patch("diskhtml.ui.ScanThread") as thread_class,
-            ):
-                window.start_file_scan()
-            self.assertEqual(thread_class.call_args.args[:2], (path, source))
-            thread_class.return_value.start.assert_called_once_with()
-            window.close()
-
-    def test_compare_directory_to_selected_scan_starts_background_thread(self) -> None:
-        """选择历史快照与当前目录后应创建后台比较线程。"""
-
-        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
-            path = Path(directory) / "archive.sqlite3"
-            source = Path(directory) / "current"
+            source = Path(directory) / "source"
             source.mkdir()
-            with Database(path) as database:
-                scan_id = database.create_scan("DIRECTORY", "C:/history", {})
-                database.set_scan_status(scan_id, ScanStatus.SCANNING)
-                database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
-            window = MainWindow(path)
-            window._table.selectRow(0)
+            output = Path(directory) / "backup.html"
+            window = MainWindow()
             with (
                 patch("diskhtml.ui.QFileDialog.getExistingDirectory", return_value=str(source)),
-                patch("diskhtml.ui.CompareSourceThread") as thread_class,
+                patch("diskhtml.ui.QFileDialog.getSaveFileName", return_value=(str(output), "")),
+                patch("diskhtml.ui.HtmlBackupThread") as thread_class,
             ):
-                window.compare_directory_to_selected_scan()
-            self.assertEqual(thread_class.call_args.args[:3], (path, source, scan_id))
+                window.create_backup()
+            self.assertEqual(thread_class.call_args.args[:3], (source, output, window._scan_config))
             thread_class.return_value.start.assert_called_once_with()
             window.close()
 
-    def test_directory_scan_completes_through_background_thread(self) -> None:
-        """窗口启动目录扫描后应由后台线程完成并刷新持久化快照。"""
+    def test_start_compare_uses_selected_archive_directory(self) -> None:
+        """比较线程应接收 HTML 树中选择的目录和本机目录。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            archive = root / "old.html"
+            source = root / "current"
+            source.mkdir()
+            output = root / "compare.html"
+            window = MainWindow()
+            with patch("diskhtml.ui.HtmlDirectoryCompareThread") as thread_class:
+                window._start_compare(archive, "资料/图片", source, output)
+            self.assertEqual(
+                thread_class.call_args.args[:5],
+                (archive, "资料/图片", source, output, window._scan_config),
+            )
+            thread_class.return_value.start.assert_called_once_with()
+            window.close()
+
+    def test_archive_directory_dialog_renders_html_directory_tree(self) -> None:
+        """目录选择对话框应展示 HTML 冷备中的层级目录。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
             source = root / "source"
             source.mkdir()
-            (source / "sample.txt").write_text("内容", encoding="utf-8")
-            path = root / "archive.sqlite3"
-            with Database(path):
-                pass
-            window = MainWindow(path)
-            with patch("diskhtml.ui.QFileDialog.getExistingDirectory", return_value=str(source)):
-                window.start_scan()
-            deadline = monotonic() + 10
-            while window._scan_thread.isRunning() and monotonic() < deadline:
-                self.application.processEvents()
-                window._scan_thread.wait(50)
-            self.assertFalse(window._scan_thread.isRunning())
-            self.application.processEvents()
-            with Database.open_existing(path) as database:
-                scan = next(database.iter_scans())
-            self.assertEqual(scan["status"], "COMPLETED")
-            self.assertEqual(window._table.rowCount(), 1)
-            window.close()
+            (source / "资料").mkdir()
+            (source / "资料" / "图片").mkdir()
+            (source / "资料" / "图片" / "one.txt").write_text("内容", encoding="utf-8")
+            archive = create_html_backup(
+                source, root / "backup.html", ScanConfig(workers=1, queue_size=1)
+            )
+            dialog = ArchiveDirectoryDialog(archive)
+            tree = dialog.findChild(QTreeWidget)
+            root_item = tree.topLevelItem(0)
+            child = root_item.child(0)
+            self.assertEqual(root_item.text(0), "冷备根目录")
+            self.assertEqual(child.text(0), "资料")
+            self.assertEqual(dialog.selected_directory(), "")
+            dialog.close()
 
-    def test_recovery_completes_through_background_thread(self) -> None:
-        """窗口恢复已取消扫描后应完成同一持久化快照。"""
+    def test_directory_backup_completes_through_background_thread(self) -> None:
+        """窗口应通过后台线程生成实际可读取的 HTML 冷备。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
             source = root / "source"
+            output = root / "backup.html"
             source.mkdir()
             (source / "sample.txt").write_text("内容", encoding="utf-8")
-            path = root / "archive.sqlite3"
-            with Database(path) as database:
-                scan_id = database.create_scan("DIRECTORY", str(source), asdict(ScanConfig()))
-                database.set_scan_status(scan_id, ScanStatus.SCANNING)
-                database.set_scan_status(scan_id, ScanStatus.CANCELLED)
-            window = MainWindow(path)
-            window._table.selectRow(0)
-            window.recover_selected_scan()
+            window = MainWindow()
+            window._start_backup(source, output)
             deadline = monotonic() + 10
-            while window._scan_thread.isRunning() and monotonic() < deadline:
+            while window._active_scan_thread.isRunning() and monotonic() < deadline:
                 self.application.processEvents()
-                window._scan_thread.wait(50)
-            self.assertFalse(window._scan_thread.isRunning())
+                window._active_scan_thread.wait(50)
+            self.assertFalse(window._active_scan_thread.isRunning())
             self.application.processEvents()
-            with Database.open_existing(path) as database:
-                scan = database.get_scan(scan_id)
-            self.assertEqual(scan["status"], "COMPLETED")
+            self.assertTrue(output.is_file())
+            self.assertIn("HTML 冷备已生成", window.statusBar().currentMessage())
             window.close()
+
+    def test_control_without_running_task_reports_message(self) -> None:
+        """没有运行中扫描时，控制按钮应给出明确提示。"""
+
+        window = MainWindow()
+        window.pause_active_scan()
+        self.assertIn("没有可控制", window.statusBar().currentMessage())
+        window.close()
