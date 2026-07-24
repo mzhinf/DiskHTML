@@ -237,6 +237,56 @@ class ScannerTests(TestCase):
             self.assertEqual(scan["status"], ScanStatus.FAILED)
             self.assertEqual(errors[0]["error_code"], "SOURCE_NOT_FOUND")
 
+    def test_many_small_files_keep_progress_and_project_counts_consistent(self) -> None:
+        """大量小文件扫描后，持久化进度和项目自校验应保持一致。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            for folder in range(10):
+                parent = source / f"folder-{folder:02d}"
+                parent.mkdir(parents=True)
+                for number in range(100):
+                    (parent / f"file-{number:03d}.txt").write_text("metadata", encoding="utf-8")
+
+            with Database(root / "archive.sqlite3") as database:
+                scan_id = Scanner(database).start(source, ScanOptions(workers=2, queue_size=8))
+                job = database.get_scan(scan_id)
+                record_count = sum(1 for _ in database.iter_files(scan_id))
+                problems = database.project_check()
+
+        self.assertEqual(job["files_seen"], 1_000)
+        self.assertEqual(job["files_hashed"], 1_000)
+        self.assertEqual(record_count, 1_000)
+        self.assertEqual(problems, ())
+
+    def test_large_sparse_file_is_hashed_in_bounded_chunks(self) -> None:
+        """大文件应按配置分块 Hash，并持久化完整进度与可信摘要。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            target = source / "large.bin"
+            size_bytes = 64 * 1024 * 1024
+            with target.open("wb") as handle:
+                handle.truncate(size_bytes)
+            progress = []
+
+            with Database(root / "archive.sqlite3") as database:
+                scan_id = Scanner(database, progress.append).start(
+                    source, ScanOptions(workers=1, queue_size=1, chunk_size=1024 * 1024)
+                )
+                job = database.get_scan(scan_id)
+                record = next(database.iter_files(scan_id))
+                problems = database.project_check()
+
+        self.assertEqual(record["hash_status"], HashStatus.OK)
+        self.assertEqual(record["size_bytes"], size_bytes)
+        self.assertEqual(job["bytes_hashed"], size_bytes)
+        self.assertEqual(progress[-1].bytes_hashed, size_bytes)
+        self.assertEqual(problems, ())
+
     @staticmethod
     def _create_source(root: Path, count: int) -> Path:
         """创建用于暂停和取消的固定小型源目录。"""
