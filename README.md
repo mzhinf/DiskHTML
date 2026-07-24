@@ -26,5 +26,5 @@ diskhtml init-db .\archive.sqlite3
 diskhtml check-db .\archive.sqlite3
 ```
 
-配置格式、数据格式、数据库迁移和恢复语义分别见 `config.example.toml`、`docs/data-format.md`、
-`docs/database-migration.md` 和 `docs/recovery.md`。
+配置格式、数据格式、数据库迁移、恢复语义和 CLI 操作分别见 `config.example.toml`、`docs/data-format.md`、
+`docs/database-migration.md`、`docs/recovery.md` 和 `docs/cli-guide.md`。
