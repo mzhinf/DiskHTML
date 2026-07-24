@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QMainWindow,
     QProgressBar,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
+    QVBoxLayout,
 )
 
 from .config import ScanConfig, load_config
@@ -112,6 +114,9 @@ class MainWindow(QMainWindow):
         recover_button = QPushButton("恢复任务", self)
         recover_button.clicked.connect(self.recover_selected_scan)
         toolbar.addWidget(recover_button)
+        error_button = QPushButton("查看错误", self)
+        error_button.clicked.connect(self.show_selected_errors)
+        toolbar.addWidget(error_button)
         if database_path is not None:
             self.load_project(database_path)
 
@@ -240,6 +245,38 @@ class MainWindow(QMainWindow):
         self._scan_progress_bar.show()
         self.statusBar().showMessage(f"正在后台恢复扫描：{scan_id}")
         self._scan_thread.start()
+
+    def show_selected_errors(self) -> None:
+        """显示当前选中扫描任务中已持久化的错误列表。"""
+
+        if self._database_path is None:
+            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
+            return
+        scan_id = self._selected_scan_id()
+        if scan_id is None:
+            self.statusBar().showMessage("请先在任务列表中选择扫描任务。", 5_000)
+            return
+        with Database.open_existing(self._database_path) as database:
+            errors = [dict(error) for error in database.iter_errors(scan_id)]
+        if not errors:
+            self.statusBar().showMessage("所选扫描任务没有已记录的错误。", 5_000)
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"扫描错误：{scan_id}")
+        dialog.resize(800, 360)
+        table = QTableWidget(len(errors), 3, dialog)
+        table.setObjectName("scan_error_table")
+        table.setHorizontalHeaderLabels(["路径", "错误代码", "错误说明"])
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        for row, error in enumerate(errors):
+            for column, value in enumerate(
+                [error["relative_path"] or "", error["error_code"], error["error_message"]]
+            ):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(table)
+        self._error_dialog = dialog
+        dialog.exec()
 
     def pause_scan(self) -> None:
         """请求在下一个文件边界暂停扫描。"""

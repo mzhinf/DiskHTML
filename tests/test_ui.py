@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QTableWidget
 
 from diskhtml.database import Database
 from diskhtml.models import ScanProgress, ScanStatus
@@ -99,4 +99,22 @@ class UiTests(TestCase):
             self.assertEqual(thread_class.call_args.args[:2], (path, None))
             self.assertEqual(thread_class.call_args.kwargs["resume_scan_id"], scan_id)
             thread_class.return_value.start.assert_called_once_with()
+            window.close()
+
+    def test_show_selected_errors_displays_persisted_errors(self) -> None:
+        """选中含错误的扫描时应显示已持久化的错误明细。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            with Database(path) as database:
+                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
+                database.record_error(scan_id, "missing.txt", "READ_ERROR", "无法读取文件")
+            window = MainWindow(path)
+            window._table.selectRow(0)
+            with patch("diskhtml.ui.QDialog.exec", return_value=0):
+                window.show_selected_errors()
+            table = window._error_dialog.findChild(QTableWidget, "scan_error_table")
+            self.assertIsNotNone(table)
+            self.assertEqual(table.rowCount(), 1)
+            self.assertEqual(table.item(0, 1).text(), "READ_ERROR")
             window.close()
