@@ -133,7 +133,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("当前没有运行中的扫描。", 5_000)
             return
         getattr(controller, action)()
-        self.statusBar().showMessage(f"已请求{action}扫描。", 5_000)
+        label = {"pause": "暂停", "resume": "继续", "cancel": "取消"}[action]
+        self.statusBar().showMessage(f"已请求{label}扫描。", 5_000)
 
     def pause_scan(self) -> None:
         """请求在下一个文件边界暂停扫描。"""
