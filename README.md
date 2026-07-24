@@ -24,6 +24,7 @@ DiskHTML 是面向 Windows 10/11 的文件 Hash 冷备份校验工具。项目�
 diskhtml --help
 diskhtml init-db .\archive.sqlite3
 diskhtml check-db .\archive.sqlite3
+diskhtml check-project .\archive.sqlite3
 ```
 
 配置格式、数据格式、数据库迁移、恢复语义和 CLI 操作分别见 `config.example.toml`、`docs/data-format.md`、

@@ -63,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     check_parser = subparsers.add_parser("check-db", help="执行数据库完整性检查")
     check_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    project_check_parser = subparsers.add_parser("check-project", help="执行项目数据自校验")
+    project_check_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
 
     scan_parser = subparsers.add_parser("scan", help="扫描文件、目录或卷")
     scan_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
@@ -131,6 +133,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = database.integrity_check()
                 print(f"数据库完整性检查：{result}")
                 return 0 if result == "ok" else 2
+            if args.command == "check-project":
+                problems = database.project_check()
+                if not problems:
+                    print("项目自校验：ok")
+                    return 0
+                print("项目自校验失败：")
+                for problem in problems:
+                    print(f"- {problem}")
+                return 2
             if args.command == "scan":
                 scan_id = Scanner(database).start(args.source, _scan_options(config.scan, args))
                 print(f"扫描已完成：{scan_id}")

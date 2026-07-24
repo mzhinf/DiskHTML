@@ -42,3 +42,10 @@
 ```
 
 `import` 通过 SQLite 备份导入已有项目；源与目标不能相同。所有参数错误与运行错误均以中文输出，并以非零退出码结束。
+## 项目自校验
+
+~~~powershell
+.\.venv\Scripts\python.exe -m diskhtml check-project .\新项目.sqlite3
+~~~
+
+“check-db”仅执行 SQLite 存储完整性检查；“check-project”还会校验模式版本、任务引用关系、状态枚举和扫描进度计数。发现问题时返回退出码 2，且不会修改项目数据库。

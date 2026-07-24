@@ -20,6 +20,28 @@ class DatabaseTests(TestCase):
                 self.assertEqual(database.schema_version(), SCHEMA_VERSION)
                 self.assertEqual(database.migration_versions(), (2,))
                 self.assertEqual(database.integrity_check(), "ok")
+                self.assertEqual(database.project_check(), ())
+
+    def test_project_check_reports_orphans_and_inconsistent_counters(self) -> None:
+        """项目自校验应报告孤立记录和扫描进度与文件记录不一致的问题。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            with Database(Path(directory) / "archive.sqlite3") as database:
+                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
+                database.connection.execute(
+                    """INSERT INTO scan_errors(scan_id, relative_path, error_code, error_message, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    ("missing-scan", None, "READ_ERROR", "模拟孤立记录", "2026-07-24T00:00:00Z"),
+                )
+                database.connection.execute(
+                    "UPDATE scan_jobs SET files_hashed = 1 WHERE id = ?", (scan_id,)
+                )
+                database.connection.commit()
+
+                problems = database.project_check()
+
+        self.assertTrue(any("scan_errors" in problem for problem in problems))
+        self.assertTrue(any("进度计数" in problem for problem in problems))
 
     def test_legacy_version_one_database_is_migrated(self) -> None:
         """版本 1 项目应原地升级到当前版本。"""

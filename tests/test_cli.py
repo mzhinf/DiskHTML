@@ -34,6 +34,7 @@ class CliTests(TestCase):
             with redirect_stdout(output):
                 self.assertEqual(main(["init-db", str(path)]), 0)
                 self.assertEqual(main(["check-db", str(path)]), 0)
+            self.assertEqual(main(["check-project", str(path)]), 0)
             self.assertTrue(path.exists())
             self.assertIn("数据库完整性检查：ok", output.getvalue())
 

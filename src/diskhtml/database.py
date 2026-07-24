@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
-from .models import CompareStatus, ScanStatus, validate_scan_transition
+from .models import CompareStatus, HashStatus, ScanStatus, SourceType, validate_scan_transition
 from .util import utc_now
 
 SCHEMA_VERSION = 2
@@ -451,6 +451,78 @@ class Database:
         """执行 SQLite 自检。"""
 
         return self.connection.execute("PRAGMA integrity_check").fetchone()[0]
+
+    def project_check(self) -> tuple[str, ...]:
+        """校验项目模式、引用关系、枚举值与扫描进度计数，返回全部发现的问题。"""
+
+        problems: list[str] = []
+        integrity = self.integrity_check()
+        if integrity != "ok":
+            problems.append(f"SQLite 完整性检查失败：{integrity}")
+        if self.schema_version() != SCHEMA_VERSION:
+            problems.append(
+                f"模式版本不匹配：当前为 {self.schema_version()}，预期为 {SCHEMA_VERSION}"
+            )
+        expected_migrations = tuple(range(2, SCHEMA_VERSION + 1))
+        if self.migration_versions() != expected_migrations:
+            problems.append(
+                f"迁移记录不匹配：当前为 {self.migration_versions()}，预期为 {expected_migrations}"
+            )
+
+        allowed_sources = tuple(item.value for item in SourceType)
+        allowed_scan_statuses = tuple(item.value for item in ScanStatus)
+        allowed_hash_statuses = tuple(item.value for item in HashStatus)
+        allowed_compare_statuses = ("PENDING", "RUNNING", "COMPLETED", "FAILED")
+        enum_checks = (
+            ("scan_jobs.source_type", "source_type", "scan_jobs", allowed_sources),
+            ("scan_jobs.status", "status", "scan_jobs", allowed_scan_statuses),
+            ("files.hash_status", "hash_status", "files", allowed_hash_statuses),
+            ("compare_jobs.status", "status", "compare_jobs", allowed_compare_statuses),
+            (
+                "compare_entries.status",
+                "status",
+                "compare_entries",
+                tuple(item.value for item in CompareStatus),
+            ),
+        )
+        for label, column, table, values in enum_checks:
+            placeholders = ", ".join("?" for _ in values)
+            count = self.connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {column} NOT IN ({placeholders})", values
+            ).fetchone()[0]
+            if count:
+                problems.append(f"{label} 存在 {count} 条未知枚举值")
+
+        orphan_checks = (
+            ("volumes", "scan_id", "scan_jobs"),
+            ("directories", "scan_id", "scan_jobs"),
+            ("files", "scan_id", "scan_jobs"),
+            ("scan_errors", "scan_id", "scan_jobs"),
+            ("compare_entries", "compare_id", "compare_jobs"),
+        )
+        for table, foreign_key, parent_table in orphan_checks:
+            count = self.connection.execute(
+                f"""SELECT COUNT(*) FROM {table} AS child
+                    LEFT JOIN {parent_table} AS parent ON parent.id = child.{foreign_key}
+                    WHERE parent.id IS NULL"""
+            ).fetchone()[0]
+            if count:
+                problems.append(f"{table} 存在 {count} 条孤立记录")
+
+        counter_rows = self.connection.execute(
+            """SELECT job.id
+               FROM scan_jobs AS job
+               WHERE job.files_hashed != (
+                   SELECT COUNT(*) FROM files WHERE scan_id = job.id
+               )
+                  OR job.bytes_hashed != (
+                   SELECT COALESCE(SUM(CASE WHEN hash_status = 'OK' THEN size_bytes ELSE 0 END), 0)
+                   FROM files WHERE scan_id = job.id
+               )"""
+        ).fetchall()
+        if counter_rows:
+            problems.append(f"{len(counter_rows)} 个扫描任务的进度计数与文件记录不一致")
+        return tuple(problems)
 
     @staticmethod
     def _stored_schema_version(connection: sqlite3.Connection) -> int:
