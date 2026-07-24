@@ -36,6 +36,9 @@ class MainWindow(QMainWindow):
         open_button = QPushButton("打开项目", self)
         open_button.clicked.connect(self.open_project)
         toolbar.addWidget(open_button)
+        refresh_button = QPushButton("刷新", self)
+        refresh_button.clicked.connect(self.refresh_project)
+        toolbar.addWidget(refresh_button)
         if database_path is not None:
             self.load_project(database_path)
 
@@ -47,6 +50,12 @@ class MainWindow(QMainWindow):
         )
         if filename:
             self.load_project(Path(filename))
+
+    def refresh_project(self) -> None:
+        """重新读取当前项目，供后台任务完成后更新列表。"""
+
+        if self._database_path is not None:
+            self.load_project(self._database_path)
 
     def load_project(self, path: Path) -> None:
         """读取数据库任务列表，不在界面层复制核心业务逻辑。"""
