@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication
 
 from diskhtml.database import Database
-from diskhtml.models import ScanStatus
+from diskhtml.models import ScanProgress, ScanStatus
 from diskhtml.ui import MainWindow
 
 
@@ -53,4 +53,16 @@ class UiTests(TestCase):
         ):
             window.open_report()
         self.assertEqual(Path(opener.call_args.args[0].toLocalFile()), report_path)
+        window.close()
+
+    def test_scan_progress_updates_status_bar(self) -> None:
+        """\u626b\u63cf\u8fdb\u5ea6\u5feb\u7167\u5e94\u66f4\u65b0\u72b6\u6001\u680f\u5e76\u663e\u793a\u6307\u793a\u5668\u3002"""
+
+        window = MainWindow()
+        window._scan_progress(
+            ScanProgress("scan-1", 5, 3, 2 * 1024 * 1024, "data/a.bin", 1024 * 1024, 12)
+        )
+        self.assertIn("3/5", window.statusBar().currentMessage())
+        self.assertIn("data/a.bin", window.statusBar().currentMessage())
+        self.assertFalse(window._scan_progress_bar.isHidden())
         window.close()

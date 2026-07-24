@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
 
 from .config import ScanConfig
 from .database import Database
+from .models import ScanProgress
 from .scanner import ScanController, Scanner
 
 
@@ -26,6 +28,7 @@ class ScanThread(QThread):
     """在后台线程运行扫描，避免阻塞 Qt 主事件循环。"""
 
     completed = pyqtSignal(str)
+    progress = pyqtSignal(object)
     failed = pyqtSignal(str)
 
     def __init__(self, database_path: Path, source: Path, controller: ScanController):
@@ -40,7 +43,9 @@ class ScanThread(QThread):
         try:
             with Database(self.database_path) as database:
                 self.completed.emit(
-                    Scanner(database).start(self.source, ScanConfig(), self.controller)
+                    Scanner(database, self.progress.emit).start(
+                        self.source, ScanConfig(), self.controller
+                    )
                 )
         except (OSError, RuntimeError, ValueError) as exc:
             self.failed.emit(str(exc))
@@ -58,6 +63,11 @@ class MainWindow(QMainWindow):
         self._table.setHorizontalHeaderLabels(["标识", "状态", "源路径", "已 Hash", "完成时间"])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.setCentralWidget(self._table)
+        self._scan_progress_bar = QProgressBar(self)
+        self._scan_progress_bar.setRange(0, 0)
+        self._scan_progress_bar.setTextVisible(False)
+        self._scan_progress_bar.hide()
+        self.statusBar().addPermanentWidget(self._scan_progress_bar)
         toolbar = QToolBar("项目", self)
         self.addToolBar(toolbar)
         open_button = QPushButton("打开项目", self)
@@ -136,6 +146,9 @@ class MainWindow(QMainWindow):
         self._scan_thread.completed.connect(self._scan_completed)
         self._scan_thread.failed.connect(self._scan_failed)
         self.statusBar().showMessage("扫描正在后台运行。")
+        self._scan_thread.progress.connect(self._scan_progress)
+        self._scan_progress_bar.setRange(0, 0)
+        self._scan_progress_bar.show()
         self._scan_thread.start()
 
     def _scan_control(self, action: str) -> None:
@@ -164,15 +177,32 @@ class MainWindow(QMainWindow):
 
         self._scan_control("cancel")
 
+    def _scan_progress(self, progress: ScanProgress) -> None:
+        """\u5728 GUI \u4e3b\u7ebf\u7a0b\u5c55\u793a\u540e\u53f0\u626b\u63cf\u7684\u5b9e\u65f6\u5feb\u7167\u3002"""
+
+        self._scan_progress_bar.show()
+        eta_text = (
+            "\u672a\u77e5"
+            if progress.estimated_remaining_seconds is None
+            else f"{progress.estimated_remaining_seconds:.0f} s"
+        )
+        self.statusBar().showMessage(
+            f"\u626b\u63cf\u4e2d\uff1a{progress.files_completed}/{progress.files_seen} \u4e2a\u6587\u4ef6\uff0c"
+            f"{progress.bytes_hashed / 1024 / 1024:.1f} MiB\uff0c{progress.bytes_per_second / 1024 / 1024:.1f} MiB/s\uff0c"
+            f"ETA {eta_text}\uff0c{progress.current_path or ''}"
+        )
+
     def _scan_completed(self, scan_id: str) -> None:
-        """接收后台扫描完成信号并刷新任务列表。"""
+        """\u63a5\u6536\u540e\u53f0\u626b\u63cf\u5b8c\u6210\u4fe1\u53f7\u5e76\u5237\u65b0\u4efb\u52a1\u5217\u8868\u3002"""
 
         self.refresh_project()
+        self._scan_progress_bar.hide()
         self.statusBar().showMessage(f"扫描已完成：{scan_id}", 10_000)
 
     def _scan_failed(self, message: str) -> None:
         """显示后台扫描失败的中文原因。"""
 
+        self._scan_progress_bar.hide()
         self.statusBar().showMessage(f"扫描失败：{message}", 10_000)
 
     def refresh_project(self) -> None:
