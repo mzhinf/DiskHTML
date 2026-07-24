@@ -82,3 +82,21 @@ class UiTests(TestCase):
                 window.load_scan_config()
             self.assertEqual(window._scan_config.workers, 4)
             self.assertEqual(window._scan_config.exclude_dirs, ("cache",))
+
+    def test_recover_selected_scan_starts_background_thread(self) -> None:
+        """选中已取消任务后应创建后台恢复线程。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            with Database(path) as database:
+                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
+                database.set_scan_status(scan_id, ScanStatus.SCANNING)
+                database.set_scan_status(scan_id, ScanStatus.CANCELLED)
+            window = MainWindow(path)
+            window._table.selectRow(0)
+            with patch("diskhtml.ui.ScanThread") as thread_class:
+                window.recover_selected_scan()
+            self.assertEqual(thread_class.call_args.args[:2], (path, None))
+            self.assertEqual(thread_class.call_args.kwargs["resume_scan_id"], scan_id)
+            thread_class.return_value.start.assert_called_once_with()
+            window.close()

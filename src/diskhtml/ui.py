@@ -25,31 +25,40 @@ from .scanner import ScanController, Scanner
 
 
 class ScanThread(QThread):
-    """在后台线程运行扫描，避免阻塞 Qt 主事件循环。"""
+    """在后台线程运行扫描或恢复，避免阻塞 Qt 主事件循环。"""
 
     completed = pyqtSignal(str)
     progress = pyqtSignal(object)
     failed = pyqtSignal(str)
 
     def __init__(
-        self, database_path: Path, source: Path, controller: ScanController, config: ScanConfig
+        self,
+        database_path: Path,
+        source: Path | None,
+        controller: ScanController,
+        config: ScanConfig | None = None,
+        resume_scan_id: str | None = None,
     ):
         super().__init__()
         self.database_path = database_path
         self.source = source
         self.config = config
         self.controller = controller
+        self.resume_scan_id = resume_scan_id
 
     def run(self) -> None:
-        """调用既有扫描服务并通过信号返回结果。"""
+        """在后台调用扫描或恢复服务，并通过信号返回结果。"""
 
         try:
             with Database(self.database_path) as database:
-                self.completed.emit(
-                    Scanner(database, self.progress.emit).start(
-                        self.source, self.config, self.controller
-                    )
-                )
+                scanner = Scanner(database, self.progress.emit)
+                if self.resume_scan_id is not None:
+                    scanner.resume(self.resume_scan_id, self.controller)
+                    self.completed.emit(self.resume_scan_id)
+                    return
+                if self.source is None or self.config is None:
+                    raise RuntimeError("扫描线程缺少源路径或配置。")
+                self.completed.emit(scanner.start(self.source, self.config, self.controller))
         except (OSError, RuntimeError, ValueError) as exc:
             self.failed.emit(str(exc))
 
@@ -100,6 +109,9 @@ class MainWindow(QMainWindow):
         refresh_button = QPushButton("刷新", self)
         refresh_button.clicked.connect(self.refresh_project)
         toolbar.addWidget(refresh_button)
+        recover_button = QPushButton("恢复任务", self)
+        recover_button.clicked.connect(self.recover_selected_scan)
+        toolbar.addWidget(recover_button)
         if database_path is not None:
             self.load_project(database_path)
 
@@ -191,6 +203,43 @@ class MainWindow(QMainWindow):
         getattr(controller, action)()
         label = {"pause": "暂停", "resume": "继续", "cancel": "取消"}[action]
         self.statusBar().showMessage(f"已请求{label}扫描。", 5_000)
+
+    def _selected_scan_id(self) -> str | None:
+        """返回表格中当前选中的扫描任务标识。"""
+
+        row = self._table.currentRow()
+        item = self._table.item(row, 0) if row >= 0 else None
+        return item.text() if item is not None else None
+
+    def recover_selected_scan(self) -> None:
+        """在后台恢复当前选中的暂停、取消或失败扫描任务。"""
+
+        if self._database_path is None:
+            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
+            return
+        if hasattr(self, "_scan_thread") and self._scan_thread.isRunning():
+            self.statusBar().showMessage("已有扫描正在运行。", 5_000)
+            return
+        scan_id = self._selected_scan_id()
+        if scan_id is None:
+            self.statusBar().showMessage("请先在任务列表中选择要恢复的扫描。", 5_000)
+            return
+        with Database.open_existing(self._database_path) as database:
+            scan = database.get_scan(scan_id)
+        if scan is None or scan["status"] not in {"PAUSED", "CANCELLED", "FAILED"}:
+            self.statusBar().showMessage("只能恢复已暂停、取消或失败的扫描任务。", 5_000)
+            return
+        self._scan_controller = ScanController()
+        self._scan_thread = ScanThread(
+            self._database_path, None, self._scan_controller, resume_scan_id=scan_id
+        )
+        self._scan_thread.completed.connect(self._scan_completed)
+        self._scan_thread.failed.connect(self._scan_failed)
+        self._scan_thread.progress.connect(self._scan_progress)
+        self._scan_progress_bar.setRange(0, 0)
+        self._scan_progress_bar.show()
+        self.statusBar().showMessage(f"正在后台恢复扫描：{scan_id}")
+        self._scan_thread.start()
 
     def pause_scan(self) -> None:
         """请求在下一个文件边界暂停扫描。"""
