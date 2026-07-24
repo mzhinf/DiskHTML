@@ -65,8 +65,7 @@ def render_html_from_sqlite(database_path: Path | str, output_path: Path | str) 
 def compare_html_archives(
     left_path: Path | str, right_path: Path | str, output_path: Path | str
 ) -> Path:
-    """?????? HTML 按名称、摘要或状态筛选 HTML ???"""
-
+    """\u517c\u5bb9\u6bd4\u8f83\u4e24\u4e2a HTML \u51b7\u5907\u5feb\u7167\uff0c\u5e76\u751f\u6210\u5355\u6587\u4ef6 HTML \u62a5\u544a\u3002"""
     destination = _prepare_destination(output_path)
     left = read_html_backup(left_path)
     right = read_html_backup(right_path)
@@ -89,8 +88,7 @@ def compare_html_directory_to_source(
     progress_callback: Callable[[ScanProgress], None] | None = None,
     controller: ScanController | None = None,
 ) -> Path:
-    """? HTML 单击文件夹查看内容；红点表示存在不同文件。 HTML ???"""
-
+    """\u5c06 HTML \u51b7\u5907\u4e2d\u9009\u5b9a\u76ee\u5f55\u4e0e\u672c\u673a\u76ee\u5f55\u6bd4\u8f83\uff0c\u5e76\u751f\u6210\u53ef\u89c6\u5316 HTML \u62a5\u544a\u3002"""
     destination = _prepare_destination(output_path)
     archive = read_html_backup(archive_path)
     directory = _normalize_directory(archived_directory)
@@ -372,7 +370,7 @@ def _page_header(title: str, description: str) -> str:
 <title>{safe_title}</title>
 <style>
 body{{font:14px system-ui,sans-serif;margin:2rem;color:#1d2939;max-width:1280px}} input{{width:min(100%,46rem);padding:.55rem}} table{{border-collapse:collapse;width:100%;margin-top:1rem}} td,th{{border:1px solid #d0d5dd;padding:.45rem;text-align:left;vertical-align:top;word-break:break-word}} .muted{{color:#667085}} #status{{margin:.8rem 0}} button{{margin-right:.4rem;padding:.4rem .7rem;cursor:pointer}} pre{{white-space:pre-wrap;background:#f8fafc;padding:1rem;overflow:auto}} .content-grid{{display:grid;grid-template-columns:minmax(16rem,24rem) minmax(0,1fr);gap:1.25rem;align-items:start}} .tree-pane{{border:1px solid #d0d5dd;border-radius:.5rem;padding:.75rem;max-height:72vh;overflow:auto;position:sticky;top:1rem}} .tree-pane h2{{font-size:1rem;margin:.1rem 0 .65rem}} .tree-folder{{margin:.2rem 0}} .tree-folder>summary{{cursor:pointer;list-style:none}} .tree-folder>summary::-webkit-details-marker{{display:none}} .tree-folder>summary::before{{content:"▸ ";}} .tree-folder[open]>summary::before{{content:"▾ ";}} .tree-children{{margin-left:1rem}} .tree-select,.name-link{{border:0;background:transparent;color:#175cd3;padding:.18rem .25rem;text-align:left;cursor:pointer}} .tree-select.active{{background:#d1e9ff;border-radius:.25rem;font-weight:600}} .diff-dot{{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:#d92d20;margin-left:.35rem}} .metadata{{display:grid;grid-template-columns:max-content 1fr;gap:.45rem 1rem;background:#f8fafc;padding:1rem}} .metadata dt{{font-weight:600}} .metadata dd{{margin:0;word-break:break-word}} .status-filter{{display:flex;flex-wrap:wrap;gap:.35rem}} @media(max-width:760px){{.content-grid{{grid-template-columns:1fr}} .tree-pane{{position:static;max-height:20rem}}}} .content-grid{{display:grid;grid-template-columns:minmax(15rem,22rem) minmax(0,1fr);gap:1.25rem;align-items:start}} .tree-pane{{border:1px solid #d0d5dd;border-radius:.5rem;padding:.75rem;max-height:70vh;overflow:auto;position:sticky;top:1rem}} .tree-pane h2{{font-size:1rem;margin:.1rem 0 .65rem}} .tree-root,.tree-folder{{margin:.2rem 0}} .tree-folder>summary{{cursor:pointer;list-style:none}} .tree-folder>summary::-webkit-details-marker{{display:none}} .tree-folder>summary::before{{content:"▸ ";}} .tree-folder[open]>summary::before{{content:"▾ ";}} .tree-children{{margin-left:1rem}} .tree-select{{border:0;background:transparent;color:#175cd3;padding:.15rem .25rem;text-align:left;max-width:100%;word-break:break-word}} .tree-select.active{{background:#d1e9ff;border-radius:.25rem;font-weight:600}} @media(max-width:760px){{.content-grid{{grid-template-columns:1fr}} .tree-pane{{position:static;max-height:20rem}}}}
-.toolbar-row{{display:flex;gap:.5rem;align-items:center}}.toolbar-row input{{flex:1;padding:.55rem;border:1px solid #b8c5d6;border-radius:.35rem}}.breadcrumbs{{margin:.65rem 0;color:#5e6c84}}.breadcrumb{{border:0;background:transparent;color:#0c66e4}}.drive-controls{{margin:.65rem 0;padding:.6rem;border-left:3px solid #0c66e4;background:#f0f6ff}}.drive-controls select{{margin:0 .35rem}}.table-wrap{{overflow:auto;border:1px solid #d0d5dd;border-radius:.5rem}}tbody tr:hover{{background:#f5f9ff}}.tree-pane{{background:#f8fbff}}.metadata{{border:1px solid #d0d5dd;border-radius:.5rem}}.status-filter button:hover{{background:#eaf2ff}}.diff-dot{{box-shadow:0 0 0 2px #ffe5e5}}@media(max-width:760px){{.toolbar-row{{flex-wrap:wrap}}.toolbar-row input{{min-width:12rem}}}}</style>
+.toolbar-row{{display:flex;gap:.5rem;align-items:center}}.directory-heading{{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-top:.8rem}}.directory-heading h2{{margin:.15rem 0}}.toolbar-row input{{flex:1;padding:.55rem;border:1px solid #b8c5d6;border-radius:.35rem}}.breadcrumbs{{margin:.65rem 0;color:#5e6c84}}.breadcrumb{{border:0;background:transparent;color:#0c66e4}}.drive-controls{{margin:.65rem 0;padding:.6rem;border-left:3px solid #0c66e4;background:#f0f6ff}}.drive-controls select{{margin:0 .35rem}}.table-wrap{{overflow:auto;border:1px solid #d0d5dd;border-radius:.5rem}}tbody tr:hover{{background:#f5f9ff}}.tree-pane{{background:#f8fbff}}.metadata{{border:1px solid #d0d5dd;border-radius:.5rem}}.status-filter button:hover{{background:#eaf2ff}}.diff-dot{{box-shadow:0 0 0 2px #ffe5e5}}@media(max-width:760px){{.toolbar-row{{flex-wrap:wrap}}.toolbar-row input{{min-width:12rem}}}}</style>
 </head>
 <body>
 <h1>{safe_title}</h1>
@@ -411,8 +409,7 @@ def _compare_document(payload: dict[str, Any]) -> str:
 
 
 def _format_size(value: object) -> str:
-    """单击文件夹查看内容；红点表示存在不同文件。"""
-
+    """\u5c06\u5b57\u8282\u6570\u8f6c\u6362\u4e3a\u9759\u6001\u56de\u9000\u8868\u683c\u4f7f\u7528\u7684\u6613\u8bfb\u5355\u4f4d\u3002"""
     if value is None:
         return "?"
     number = float(value)
@@ -425,8 +422,7 @@ def _format_size(value: object) -> str:
 
 
 def _initial_table_rows(payload: dict[str, Any]) -> str:
-    """单击文件夹查看内容；红点表示存在不同文件。?????"""
-
+    """\u9884\u5148\u5199\u5165\u6761\u76ee\uff0c\u786e\u4fdd\u6d4f\u89c8\u5668\u811a\u672c\u5f02\u5e38\u65f6\u62a5\u544a\u4e0d\u4f1a\u663e\u793a\u4e3a\u7a7a\u3002"""
     compare = payload.get("kind") == "compare"
     entries = payload.get("entries", []) if compare else payload.get("files", [])
     rows: list[str] = []
@@ -452,18 +448,16 @@ def _initial_table_rows(payload: dict[str, Any]) -> str:
 
 
 def _tree_document(payload: dict[str, Any]) -> str:
-    """单击文件夹查看内容；红点表示存在不同文件。?????"""
-
+    """\u8fd4\u56de\u76ee\u5f55\u6811\u3001\u76ee\u5f55\u8be6\u60c5\u5185\u7684\u7236\u7ea7\u5bfc\u822a\u3001\u76d8\u7b26\u6620\u5c04\u548c\u9759\u6001\u8868\u683c\u56de\u9000\u6846\u67b6\u3002"""
     same_hidden = "" if payload.get("kind") == "compare" else " hidden"
     return f"""<div class="content-grid"><aside class="tree-pane"><h2>文件树</h2><p class="muted">单击文件夹查看内容；红点表示存在不同文件。</p><div id="tree"></div></aside><main>
-<div class="toolbar-row"><input id="filter" type="search" placeholder="按名称、摘要或状态筛选"><button id="up-folder" type="button" disabled>上一级</button></div>
-<nav id="breadcrumbs" class="breadcrumbs" aria-label="本机目录"></nav>
+<div class="toolbar-row"><input id="filter" type="search" placeholder="按名称、摘要或状态筛选"></div>
 <div id="drive-controls" class="drive-controls" hidden><label>文件所在盘符 <select id="drive-select"></select></label><span id="drive-hint"></span></div>
-<p id="status" class="muted">单击文件夹查看内容；红点表示存在不同文件。??????</p>
-<h2 id="detail-title">目录详情：冷备根目录</h2>
+<p id="status" class="muted">正在显示嵌入的静态数据；页面脚本加载后可使用目录导航。</p>
+<div class="directory-heading"><div><h2 id="detail-title">目录详情：冷备根目录</h2><nav id="breadcrumbs" class="breadcrumbs" aria-label="当前目录"></nav></div><button id="up-folder" type="button" disabled>上一级</button></div>
 <div class="table-wrap"><table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Created</th><th>SHA-256</th><th id="same-heading"{same_hidden}>是否相同</th></tr></thead><tbody id="rows">{_initial_table_rows(payload)}</tbody></table></div>
 <button id="more" type="button">显示更多</button>
-<h2>选中条目详情</h2><dl id="detail" class="metadata"><dt>??</dt><dd>按名称、摘要或状态筛选?????</dd></dl>
+<h2>选中条目详情</h2><dl id="detail" class="metadata"><dt>提示</dt><dd>选择文件或文件夹查看完整元数据。</dd></dl>
 """
 
 
@@ -506,7 +500,7 @@ def _document_footer() -> str:
   function showDetail(row) { const fields=[['Name',row.name],['Type',row.kind==='directory'?'文件夹':'文件'],['Size',size(row.size_bytes)],['Modified',time(row.modified_time)],['Created',time(row.created_time)],['SHA-256',row.sha256||'—']];if(mode==='compare')fields.push(['是否相同',same(row)]);if(row.error_message)fields.push(['错误',row.error_message]);detail.replaceChildren();fields.forEach(([key,value])=>{const term=document.createElement('dt'),definition=document.createElement('dd');term.textContent=key;definition.textContent=value||'—';detail.append(term,definition);}); }
   function render() { const current=visible();rows.replaceChildren();current.slice(0,shown).forEach((row)=>{const tableRow=document.createElement('tr');const label=document.createElement(row.kind==='directory'?'button':'span');label.textContent=(row.kind==='directory'?'📁 ':'📄 ')+row.name;label.className='name-link';if(row.kind==='directory'){label.type='button';label.addEventListener('click',()=>select(row.relative_path));}else{tableRow.addEventListener('click',()=>{selectedRecord=row;showDetail(row);});}[label,size(row.size_bytes),time(row.modified_time),time(row.created_time),row.sha256||'—',same(row)].forEach((value,index)=>{const cell=document.createElement('td');if(value&&typeof value==='object'&&'nodeType' in value)cell.append(value);else cell.textContent=value;if(index===5&&mode!=='compare')cell.hidden=true;tableRow.append(cell);});rows.append(tableRow);});sameHeading.hidden=mode!=='compare';title.textContent='目录详情：'+(selectedPath||'冷备根目录');status.textContent='目录：'+(selectedPath||'冷备根目录')+'；显示 '+Math.min(shown,current.length)+' / '+current.length+' 项';more.hidden=shown>=current.length;showDetail(selectedRecord||folder(selectedPath));up.disabled=!selectedPath;renderBreadcrumbs();renderTree(); }
   if(mode==='scan'){const stats=payload.statistics;document.getElementById('summary').textContent='文件 '+stats.total_files+'，目录 '+stats.total_directories+'，已 Hash '+stats.hashed_files+'，问题 '+stats.problem_files;}else{document.getElementById('summary').textContent=Object.entries(payload.statistics).map(([key,value])=>key+' '+value).join('，');document.getElementById('sources').textContent='历史冷备：'+payload.left.path+'（目录：'+payload.left.selected_directory+'）；本机目录：'+payload.right.path;document.querySelectorAll('[data-status]').forEach((button)=>button.addEventListener('click',()=>{selectedStatus=button.dataset.status;shown=500;render();}));}
-  if(driveMatch){driveControls.hidden=false;for(let code=65;code<=90;code+=1){const option=document.createElement('option');option.value=String.fromCharCode(code)+':';option.textContent=option.value;driveSelect.append(option);}driveSelect.value=driveMatch[1].toUpperCase()+':';driveHint.textContent='单击文件夹查看内容；红点表示存在不同文件。????? Windows ????????';driveSelect.addEventListener('change',()=>showDetail(selectedRecord||folder(selectedPath)));}
+  if(driveMatch){driveControls.hidden=false;for(let code=65;code<=90;code+=1){const option=document.createElement('option');option.value=String.fromCharCode(code)+':';option.textContent=option.value;driveSelect.append(option);}driveSelect.value=driveMatch[1].toUpperCase()+':';driveHint.textContent='\u5207\u6362\u76d8\u7b26\u540e\uff0c\u8be6\u60c5\u4e2d\u7684\u672c\u673a\u8def\u5f84\u4f1a\u4fdd\u6301\u76ee\u5f55\u7ed3\u6784\uff1b\u8f6f\u94fe\u63a5\u7531 Windows \u6309\u5f53\u524d\u76ee\u6807\u89e3\u6790\u3002';driveSelect.addEventListener('change',()=>showDetail(selectedRecord||folder(selectedPath)));}
   filter.addEventListener('input',()=>{shown=500;render();});more.addEventListener('click',()=>{shown+=500;render();});up.addEventListener('click',()=>select(parentOf(selectedPath)));render();
 })();
 </script>
