@@ -39,3 +39,11 @@
 - 浏览器选择一个分片后，才通过本地 `<script>` 标签载入该分片并在内存构建该分片的目录树；首屏不嵌入全量文件。
 - 所有样式、脚本和分片均为相对本地资源，不使用 CDN、`fetch` 或网络服务，因此可由 `file://` 直接打开。
 - 导出先写入目标同级的隐藏临时目录，全部写入成功后使用原子改名发布；目标目录已存在时拒绝覆盖。
+
+## 比较导出格式
+
+- 比较任务保存左侧旧来源和右侧新来源；比较条目按规范化 `path_key` 流式归并，结果显示右侧路径。
+- 可信 SHA256 相同为 `MATCH`，不同为 `CHANGED`；仅左侧为 `MISSING`，仅右侧为 `ADDED`。
+- 任一侧的摘要状态不是 `OK` 或 SHA256 缺失时必须输出 `ERROR`，不能判为 `MATCH`。
+- 完成比较可导出 `compare_summary.json`、UTF-8 BOM 的 `compare_entries.csv` 和 `compare_report.html`。
+- `compare_assets/manifest.js` 仅含统计和状态分片清单，明细按 `MATCH`、`CHANGED`、`ADDED`、`MISSING`、`ERROR` 分片并由本地脚本按需加载。
