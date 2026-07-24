@@ -28,6 +28,7 @@ from .html_archive import (
     compare_html_directory_to_source,
     create_html_backup,
     html_backup_directories,
+    render_html_from_sqlite,
 )
 from .models import ScanProgress
 from .scanner import ScanController
@@ -61,6 +62,26 @@ class HtmlBackupThread(QThread):
                 self.controller,
             )
             self.completed.emit(str(output))
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.failed.emit(str(exc))
+
+
+class SqliteHtmlRenderThread(QThread):
+    """在后台从 SQLite 冷备索引生成当前版本 HTML。"""
+
+    completed = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, database: Path, output: Path) -> None:
+        super().__init__()
+        self.database = database
+        self.output = output
+
+    def run(self) -> None:
+        """读取已完成扫描并输出当前版本的单文件 HTML。"""
+
+        try:
+            self.completed.emit(str(render_html_from_sqlite(self.database, self.output)))
         except (OSError, RuntimeError, ValueError) as exc:
             self.failed.emit(str(exc))
 
@@ -201,6 +222,7 @@ class MainWindow(QMainWindow):
         for label, callback in (
             ("生成冷备 HTML", self.create_backup),
             ("比较冷备目录", self.compare_archive_directory),
+            ("从 SQLite 生成 HTML", self.render_sqlite_backup),
             ("打开报告", self.open_report),
             ("扫描配置", self.load_scan_config),
         ):
@@ -247,6 +269,26 @@ class MainWindow(QMainWindow):
         self._set_active_scan(thread, controller)
         self._scan_progress_bar.show()
         self.statusBar().showMessage("正在后台生成 HTML 冷备。")
+        thread.start()
+
+    def render_sqlite_backup(self) -> None:
+        """选择历史 SQLite 冷备索引并生成当前版本 HTML 页面。"""
+
+        database, _ = QFileDialog.getOpenFileName(
+            self, "选择 SQLite 冷备索引", filter="SQLite 文件 (*.sqlite3 *.sqlite);;所有文件 (*)"
+        )
+        if not database:
+            return
+        output, _ = QFileDialog.getSaveFileName(
+            self, "从 SQLite 生成 HTML 冷备", filter="HTML 文件 (*.html)"
+        )
+        if not output or self._active_scan_running():
+            return
+        thread = SqliteHtmlRenderThread(Path(database), Path(output))
+        thread.completed.connect(self._backup_completed)
+        thread.failed.connect(self._scan_failed)
+        self._active_scan_thread = thread
+        self.statusBar().showMessage("正在从 SQLite 冷备索引生成 HTML。")
         thread.start()
 
     def compare_archive_directory(self) -> None:

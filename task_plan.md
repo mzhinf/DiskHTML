@@ -332,3 +332,11 @@ archive_report/
 - [x] 统一 GUI、EXE 与 Python CLI 的“历史 HTML 目录对本机目录”比较语义。
 - [x] 完整回归（61/61）与静态检查。
 - [x] 关闭旧 EXE 后重新构建，并通过新 EXE 的端到端验证。
+
+## 当前任务：Snap2HTML 风格详情与 SQLite 再渲染
+
+- [x] 在快照中保存目录元数据并提供 Name、Size、Modified、Created、SHA-256 详情。
+- [x] 让比较报告复用详情布局，显示是否相同和目录差异红点。
+- [x] 同时导出同名 SQLite，并提供从 SQLite 重新生成 HTML 的 GUI/CLI 入口。
+- [ ] 关闭旧 DiskHTML.exe 后重建发布包并验证真实 EXE。
+- [ ] 提交本次修改。

@@ -63,3 +63,9 @@
 - 已关闭占用的旧 EXE 并重新构建 `build\dist\DiskHTML\DiskHTML.exe`。
 - 真实 EXE 端到端验证在 `C:\tmp\diskhtml-e2e-4a972d95ff16480b8f4c917b85e06bad` 创建嵌套样本：冷备 HTML 含 `id="tree"`、`createTree()` 与 `SHA-256`；历史 `资料/照片` 与本机目录比较得到 MATCH、CHANGED、ADDED，且不包含树外文件。
 - 实现、文档、完整回归（61/61）、静态检查和发布验证均已完成，待 Git 提交。
+
+### 详情页与 SQLite 冷备索引
+
+- 已增加目录创建/修改时间迁移，并在 HTML 快照中保留空目录和目录元数据。
+- HTML 冷备与比较报告均使用左树右详情布局；关键回归和完整回归 61/61 通过，Ruff 与格式检查通过。
+- 新版发布包尚未重建：旧 DiskHTML.exe 进程 20416 锁住发布目录；不强制结束用户进程。

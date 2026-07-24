@@ -18,7 +18,7 @@ class DatabaseTests(TestCase):
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             with Database(Path(directory) / "archive.sqlite3") as database:
                 self.assertEqual(database.schema_version(), SCHEMA_VERSION)
-                self.assertEqual(database.migration_versions(), (2,))
+                self.assertEqual(database.migration_versions(), (2, 3))
                 self.assertEqual(database.integrity_check(), "ok")
                 self.assertEqual(database.project_check(), ())
 
@@ -64,7 +64,7 @@ class DatabaseTests(TestCase):
 
             with Database.open_existing(path) as database:
                 self.assertEqual(database.schema_version(), SCHEMA_VERSION)
-                self.assertEqual(database.migration_versions(), (2,))
+                self.assertEqual(database.migration_versions(), (2, 3))
                 self.assertEqual(database.integrity_check(), "ok")
 
     def test_newer_schema_is_rejected_without_downgrade(self) -> None:

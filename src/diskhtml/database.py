@@ -14,7 +14,7 @@ from typing import Any
 from .models import CompareStatus, HashStatus, ScanStatus, SourceType, validate_scan_transition
 from .util import utc_now
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _CREATE_SCHEMA_META = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -141,7 +141,12 @@ _MIGRATION_2 = (
     "CREATE INDEX IF NOT EXISTS idx_compare_entries_job ON compare_entries(compare_id, status, relative_path)",
 )
 
-MIGRATIONS: dict[int, tuple[str, ...]] = {1: _MIGRATION_1, 2: _MIGRATION_2}
+_MIGRATION_3 = (
+    "ALTER TABLE directories ADD COLUMN created_time TEXT",
+    "ALTER TABLE directories ADD COLUMN modified_time TEXT",
+)
+
+MIGRATIONS: dict[int, tuple[str, ...]] = {1: _MIGRATION_1, 2: _MIGRATION_2, 3: _MIGRATION_3}
 _REQUIRED_TABLES = frozenset(
     {
         "schema_meta",
@@ -329,11 +334,21 @@ class Database:
         path_key: str,
         parent_path_key: str | None,
         error: str | None = None,
+        created_time: str | None = None,
+        modified_time: str | None = None,
     ) -> None:
-        """插入或更新一个目录记录。"""
+        """插入或更新一个目录记录及其时间元数据。"""
 
         with self.batch() as batch:
-            batch.record_directory(scan_id, relative_path, path_key, parent_path_key, error)
+            batch.record_directory(
+                scan_id,
+                relative_path,
+                path_key,
+                parent_path_key,
+                error,
+                created_time,
+                modified_time,
+            )
 
     def record_error(
         self, scan_id: str, relative_path: str | None, code: str, message: str
@@ -630,21 +645,29 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
         path_key: str,
         parent_path_key: str | None,
         error: str | None = None,
+        created_time: str | None = None,
+        modified_time: str | None = None,
     ) -> None:
-        """在当前批次内插入或更新目录记录。"""
+        """在当前批次内插入或更新目录记录及其时间元数据。"""
 
         self._require_active()
         self._connection.execute(
             """INSERT INTO directories(
-                   scan_id, relative_path, path_key, parent_path_key, scan_status, error_message
-               ) VALUES (?, ?, ?, ?, ?, ?)
+                   scan_id, relative_path, path_key, parent_path_key, created_time, modified_time,
+                   scan_status, error_message
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(scan_id, path_key) DO UPDATE SET
-                   scan_status = excluded.scan_status, error_message = excluded.error_message""",
+                   created_time = excluded.created_time,
+                   modified_time = excluded.modified_time,
+                   scan_status = excluded.scan_status,
+                   error_message = excluded.error_message""",
             (
                 scan_id,
                 relative_path,
                 path_key,
                 parent_path_key,
+                created_time,
+                modified_time,
                 "ERROR" if error else "OK",
                 error,
             ),

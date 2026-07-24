@@ -20,7 +20,7 @@
 .\.venv\Scripts\python.exe -m diskhtml compare-source .\资料冷备.html 资料\照片 E:\当前照片 .\照片比较.html
 ~~~
 
-若比较冷备根目录，第二个位置参数使用 `.`。输出 HTML 必须不存在。冷备和比较报告都可用浏览器离线打开，提供统计、筛选、分页和条目详情。扫描临时使用 SQLite，但完成后自动清理；用户不需要保存数据库。
+若比较冷备根目录，第二个位置参数使用 `.`。输出 HTML 必须不存在。每次 `backup` 同时生成同名 `.sqlite3` 冷备索引；冷备和比较报告都可用浏览器离线打开。可用以下命令从 SQLite 重建当前版本的 HTML：\n\n~~~powershell\n.\\.venv\\Scripts\\python.exe -m diskhtml render-sqlite .\\资料冷备.sqlite3 .\\资料冷备-新版.html\n~~~
 
 `compare-html` 仍保留为兼容旧自动化脚本的高级命令；DiskHTML.exe 的默认界面和命令不提供该入口。EXE 的完整操作见 [DiskHTML.exe 使用指南](diskhtml-exe-guide.md)。
 

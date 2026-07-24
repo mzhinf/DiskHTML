@@ -10,7 +10,11 @@ from pathlib import Path
 
 from . import __version__
 from .config import ScanConfig, load_config
-from .html_archive import compare_html_directory_to_source, create_html_backup
+from .html_archive import (
+    compare_html_directory_to_source,
+    create_html_backup,
+    render_html_from_sqlite,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
     backup.add_argument("output", type=Path, help="新的 .html 冷备快照")
     _add_scan_options(backup)
 
+    render = commands.add_parser("render-sqlite", help="从 SQLite 冷备索引重新生成当前版本 HTML")
+    render.add_argument("database", type=Path, help="历史 .sqlite3 冷备索引")
+    render.add_argument("output", type=Path, help="新的 .html 冷备快照")
+
     compare = commands.add_parser("compare-source", help="将 HTML 冷备中选定目录与本机目录比较")
     compare.add_argument("archive", type=Path, help="历史冷备快照 .html")
     compare.add_argument("archived_directory", help="HTML 冷备中的相对目录，根目录使用 .")
@@ -46,7 +54,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(args.config)
         if args.command == "backup":
             output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
-            _print(f"HTML 冷备快照已生成：{output}")
+            _print(f"HTML 冷备快照及 SQLite 索引已生成：{output}")
+            return 0
+        if args.command == "render-sqlite":
+            output = render_html_from_sqlite(args.database, args.output)
+            _print(f"HTML 冷备快照已从 SQLite 生成：{output}")
             return 0
         output = compare_html_directory_to_source(
             args.archive,

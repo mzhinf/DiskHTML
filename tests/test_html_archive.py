@@ -11,6 +11,8 @@ from diskhtml.html_archive import (
     create_html_backup,
     html_backup_directories,
     read_html_backup,
+    render_html_from_sqlite,
+    sqlite_backup_path,
 )
 
 
@@ -46,8 +48,11 @@ class HtmlArchiveTests(TestCase):
         self.assertEqual(payload["kind"], "scan")
         self.assertEqual(payload["statistics"]["total_files"], 3)
         self.assertIn('id="tree"', archive_text)
-        self.assertIn("createTree()", archive_text)
+        self.assertIn("renderTree()", archive_text)
         self.assertIn("SHA-256", archive_text)
+        self.assertIn("<th>Name</th><th>Size</th><th>Modified</th><th>Created</th>", archive_text)
+        self.assertIn("diff-dot", comparison_text)
+        self.assertIn("是否相同", comparison_text)
         self.assertIn('id="filter"', archive_text)
         self.assertIn('id="rows"', archive_text)
         self.assertIn("显示更多", archive_text)
@@ -107,5 +112,9 @@ class HtmlArchiveTests(TestCase):
             output = create_html_backup(
                 source, root / "archive.html", ScanConfig(workers=1, queue_size=1)
             )
+            sqlite_output = sqlite_backup_path(output)
+            rebuilt = render_html_from_sqlite(sqlite_output, root / "rebuilt.html")
+            self.assertTrue(sqlite_output.is_file())
+            self.assertIn('id="tree"', rebuilt.read_text(encoding="utf-8"))
             with self.assertRaises(FileExistsError):
                 create_html_backup(source, output, ScanConfig(workers=1, queue_size=1))

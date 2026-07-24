@@ -9,7 +9,7 @@ DiskHTML.exe backup F:\Documents .\资料冷备.html
 DiskHTML.exe compare-source .\资料冷备.html 资料\照片 E:\当前照片 .\照片比较.html
 ~~~
 
-DiskHTML.exe 读取 HTML 冷备的文件树，让用户选择历史目录后与本机任意目录比较。扫描期间 SQLite 仅作为临时可靠索引，成功后自动清理，不是用户交付物。
+DiskHTML.exe 读取 HTML 冷备的文件树，让用户选择历史目录后与本机任意目录比较。每次冷备同时生成同名 `.sqlite3` 索引；可在不重新扫描的情况下从该索引重新生成新版 HTML。
 
 完整操作见 [用户指南](docs/user-guide.md)、[DiskHTML.exe 使用指南](docs/diskhtml-exe-guide.md)和[HTML 冷备与目录比较设计](docs/html-archive-design.md)。
 

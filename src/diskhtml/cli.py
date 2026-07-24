@@ -17,6 +17,7 @@ from .html_archive import (
     compare_html_archives,
     compare_html_directory_to_source,
     create_html_backup,
+    render_html_from_sqlite,
 )
 from .logging_config import configure_logging
 from .report import export_compare, export_scan
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
     backup_parser.add_argument("source", type=Path, help="扫描源路径")
     backup_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
     _add_scan_options(backup_parser)
+
+    render_sqlite_parser = subparsers.add_parser(
+        "render-sqlite", help="从 SQLite 冷备索引重新生成当前版本 HTML"
+    )
+    render_sqlite_parser.add_argument("database", type=Path, help="历史 .sqlite3 冷备索引")
+    render_sqlite_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
 
     compare_source_parser = subparsers.add_parser(
         "compare-source", help="将 HTML 冷备中的目录与本机目录比较并生成单文件 HTML 报告"
@@ -152,6 +159,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "backup":
             output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
             print(f"HTML 冷备快照已生成：{output}")
+            return 0
+        if args.command == "render-sqlite":
+            output = render_html_from_sqlite(args.database, args.output)
+            print(f"HTML 冷备快照已从 SQLite 生成：{output}")
             return 0
         if args.command == "compare-source":
             output = compare_html_directory_to_source(

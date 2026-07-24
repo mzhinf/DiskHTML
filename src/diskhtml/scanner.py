@@ -144,7 +144,18 @@ class Scanner:
         self.database.set_scan_status(scan_id, ScanStatus.SCANNING)
         self.database.record_volume(scan_id, collect_volume_info(source))
         root = source.parent if source.is_file() else source
-        self.database.record_directory(scan_id, "", "", None)
+        try:
+            root_stat = os.stat(_filesystem_path(root), follow_symlinks=False)
+        except OSError:
+            root_stat = None
+        self.database.record_directory(
+            scan_id,
+            "",
+            "",
+            None,
+            created_time=timestamp_to_utc(root_stat.st_ctime_ns) if root_stat else None,
+            modified_time=timestamp_to_utc(root_stat.st_mtime_ns) if root_stat else None,
+        )
         seen = 0
         completed = 0
         bytes_hashed = 0
@@ -311,7 +322,15 @@ class Scanner:
                                 key = normalized_path_key(relative)
                                 parent = Path(relative).parent.as_posix()
                                 parent_key = normalized_path_key(parent) if parent != "." else ""
-                                self.database.record_directory(scan_id, relative, key, parent_key)
+                                directory_stat = entry.stat(follow_symlinks=False)
+                                self.database.record_directory(
+                                    scan_id,
+                                    relative,
+                                    key,
+                                    parent_key,
+                                    created_time=timestamp_to_utc(directory_stat.st_ctime_ns),
+                                    modified_time=timestamp_to_utc(directory_stat.st_mtime_ns),
+                                )
                                 stack.append(path)
                             elif entry.is_file(follow_symlinks=False) and not self._excluded_file(
                                 path, options

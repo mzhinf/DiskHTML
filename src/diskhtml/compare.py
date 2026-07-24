@@ -114,9 +114,19 @@ def _one_sided_entry(row: Any, status: CompareStatus, side: str) -> dict[str, An
         "error_message": None,
     }
     if side == "左侧":
-        values.update(old_size_bytes=row["size_bytes"], old_sha256=row["sha256"])
+        values.update(
+            old_size_bytes=row["size_bytes"],
+            old_sha256=row["sha256"],
+            old_created_time=row["created_time"],
+            old_modified_time=row["modified_time"],
+        )
     else:
-        values.update(new_size_bytes=row["size_bytes"], new_sha256=row["sha256"])
+        values.update(
+            new_size_bytes=row["size_bytes"],
+            new_sha256=row["sha256"],
+            new_created_time=row["created_time"],
+            new_modified_time=row["modified_time"],
+        )
     return values
 
 
@@ -145,6 +155,10 @@ def _both_sides_entry(left: Any, right: Any) -> dict[str, Any]:
         "new_size_bytes": right["size_bytes"],
         "old_sha256": left["sha256"],
         "new_sha256": right["sha256"],
+        "old_created_time": left["created_time"],
+        "new_created_time": right["created_time"],
+        "old_modified_time": left["modified_time"],
+        "new_modified_time": right["modified_time"],
         "error_message": message,
     }
 

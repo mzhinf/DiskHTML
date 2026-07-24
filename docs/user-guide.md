@@ -8,7 +8,7 @@
 
 ## 日常使用：生成 HTML 冷备
 
-冷备的交付物是一个可直接双击打开的 HTML 文件，类似 Snap2HTML。扫描期间会使用临时 SQLite 索引来保证 Hash、排序和错误记录可靠；成功后临时索引会自动清理，不会出现在冷备目录中。
+每次冷备会生成一个可直接双击打开的 HTML 文件和一个同名 SQLite 索引，例如 `资料冷备.html` 与 `资料冷备.sqlite3`。HTML 类似 Snap2HTML，用于离线浏览；SQLite 保留可靠的扫描、Hash、排序和错误记录，可在页面升级后重新生成 HTML，而不必重新扫描。
 
 ~~~powershell
 diskhtml backup D:\资料 .\资料冷备.html
@@ -32,7 +32,7 @@ diskhtml backup D:\资料\重要文件.zip .\重要文件冷备.html
 
 ## 保存和迁移
 
-请保留完整的 .html 文件本身，不需要附带 SQLite 或网络资源。HTML 内含可视化界面和快照数据，复制到其他 Windows 电脑后仍可离线打开。
+请一起保留同名的 `.html` 和 `.sqlite3`：HTML 内含可视化界面和快照数据，复制到其他 Windows 电脑后仍可离线打开；SQLite 可由 DiskHTML.exe 或命令 `render-sqlite` 重新生成当前版本 HTML。
 
 单文件 HTML 会包含完整文件清单。超大目录的快照可能较大，浏览器打开时会占用相应内存；这种情况下建议使用现代 64 位浏览器，并避免同时打开多个超大快照。
 

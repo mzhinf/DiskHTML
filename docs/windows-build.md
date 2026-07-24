@@ -24,7 +24,7 @@ DiskHTML.exe backup F:\Documents .\资料冷备.html
 3. 在历史 HTML 树中选择一个目录，并与本机目录生成 HTML 比较报告。
 4. 确认比较报告状态筛选可见。
 5. 在命令提示符执行 DiskHTML.exe backup <目录> <新.html>，确认 HTML 实际生成。
-6. 确认输出目录只包含用户选择的 HTML 文件，不需要 SQLite 项目文件。
+6. 确认输出目录同时包含用户选择的 HTML 文件和同名 `.sqlite3` 冷备索引；用该索引重新生成新版 HTML。
 7. 扫描期间测试暂停、继续或取消操作。
 
 构建前应通过：
