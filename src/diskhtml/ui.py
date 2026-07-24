@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QToolBar,
 )
 
-from .config import ScanConfig
+from .config import ScanConfig, load_config
 from .database import Database
 from .models import ScanProgress
 from .scanner import ScanController, Scanner
@@ -31,10 +31,13 @@ class ScanThread(QThread):
     progress = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, database_path: Path, source: Path, controller: ScanController):
+    def __init__(
+        self, database_path: Path, source: Path, controller: ScanController, config: ScanConfig
+    ):
         super().__init__()
         self.database_path = database_path
         self.source = source
+        self.config = config
         self.controller = controller
 
     def run(self) -> None:
@@ -44,7 +47,7 @@ class ScanThread(QThread):
             with Database(self.database_path) as database:
                 self.completed.emit(
                     Scanner(database, self.progress.emit).start(
-                        self.source, ScanConfig(), self.controller
+                        self.source, self.config, self.controller
                     )
                 )
         except (OSError, RuntimeError, ValueError) as exc:
@@ -59,6 +62,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("DiskHTML")
         self.resize(900, 500)
         self._database_path: Path | None = None
+        self._scan_config = ScanConfig()
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(["标识", "状态", "源路径", "已 Hash", "完成时间"])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -78,6 +82,9 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(create_button)
         scan_button = QPushButton("扫描路径", self)
         scan_button.clicked.connect(self.start_scan)
+        config_button = QPushButton("\u626b\u63cf\u914d\u7f6e", self)
+        config_button.clicked.connect(self.load_scan_config)
+        toolbar.addWidget(config_button)
         toolbar.addWidget(scan_button)
         report_button = QPushButton("\u6253\u5f00\u62a5\u544a", self)
         report_button.clicked.connect(self.open_report)
@@ -120,6 +127,27 @@ class MainWindow(QMainWindow):
         if filename:
             self.load_project(Path(filename))
 
+    def load_scan_config(self) -> None:
+        """\u4ece TOML \u6587\u4ef6\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e\u53ca\u6392\u9664\u89c4\u5219\u3002"""
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e",
+            filter="TOML \u914d\u7f6e (*.toml);;\u6240\u6709\u6587\u4ef6 (*)",
+        )
+        if not filename:
+            return
+        try:
+            self._scan_config = load_config(Path(filename)).scan
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"\u914d\u7f6e\u52a0\u8f7d\u5931\u8d25\uff1a{exc}", 10_000)
+            return
+        self.statusBar().showMessage(
+            f"\u5df2\u52a0\u8f7d\u626b\u63cf\u914d\u7f6e\uff1a{self._scan_config.workers} \u4e2a\u5de5\u4f5c\u7ebf\u7a0b\uff0c"
+            f"{len(self._scan_config.exclude_dirs)} \u6761\u76ee\u5f55\u6392\u9664\u89c4\u5219\u3002",
+            10_000,
+        )
+
     def open_report(self) -> None:
         """\u9009\u62e9\u5e76\u4ea4\u7ed9\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u6253\u5f00\u79bb\u7ebf\u62a5\u544a\u3002"""
 
@@ -142,7 +170,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("已有扫描正在运行。", 5_000)
             return
         self._scan_controller = ScanController()
-        self._scan_thread = ScanThread(self._database_path, Path(source), self._scan_controller)
+        self._scan_thread = ScanThread(
+            self._database_path, Path(source), self._scan_controller, self._scan_config
+        )
         self._scan_thread.completed.connect(self._scan_completed)
         self._scan_thread.failed.connect(self._scan_failed)
         self.statusBar().showMessage("扫描正在后台运行。")

@@ -66,3 +66,19 @@ class UiTests(TestCase):
         self.assertIn("data/a.bin", window.statusBar().currentMessage())
         self.assertFalse(window._scan_progress_bar.isHidden())
         window.close()
+
+    def test_load_scan_config_uses_selected_toml(self) -> None:
+        """\u9009\u62e9\u914d\u7f6e\u6587\u4ef6\u540e\u5e94\u4f7f\u7528\u5176\u626b\u63cf\u4e0e\u6392\u9664\u89c4\u5219\u3002"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            config_path = Path(directory) / "scan.toml"
+            config_path.write_text(
+                '[scan]\nworkers = 4\nexclude_dirs = ["cache"]\n', encoding="utf-8"
+            )
+            window = MainWindow()
+            with patch(
+                "diskhtml.ui.QFileDialog.getOpenFileName", return_value=(str(config_path), "")
+            ):
+                window.load_scan_config()
+            self.assertEqual(window._scan_config.workers, 4)
+            self.assertEqual(window._scan_config.exclude_dirs, ("cache",))
