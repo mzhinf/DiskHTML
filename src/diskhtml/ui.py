@@ -36,11 +36,29 @@ class MainWindow(QMainWindow):
         open_button = QPushButton("打开项目", self)
         open_button.clicked.connect(self.open_project)
         toolbar.addWidget(open_button)
+        create_button = QPushButton("新建项目", self)
+        create_button.clicked.connect(self.create_project)
+        toolbar.addWidget(create_button)
         refresh_button = QPushButton("刷新", self)
         refresh_button.clicked.connect(self.refresh_project)
         toolbar.addWidget(refresh_button)
         if database_path is not None:
             self.load_project(database_path)
+
+    def create_project(self) -> None:
+        """选择新路径并创建空的 SQLite 项目。"""
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "新建项目", filter="SQLite 数据库 (*.sqlite3)"
+        )
+        if filename:
+            path = Path(filename)
+            if path.exists():
+                self.statusBar().showMessage("项目文件已存在，未覆盖。", 5_000)
+                return
+            with Database(path):
+                pass
+            self.load_project(path)
 
     def open_project(self) -> None:
         """通过文件选择器打开已有 SQLite 项目。"""
