@@ -1,0 +1,15 @@
+# 配置格式版本；未知版本会被拒绝，避免静默误读。
+format_version = 1
+
+[logging]
+level = "INFO"
+json = false
+
+[scan]
+workers = 2
+queue_size = 32
+chunk_size = 4194304
+exclude_dirs = ["System Volume Information", "$RECYCLE.BIN"]
+exclude_extensions = [".tmp", ".part"]
+sha512 = false
+retry_count = 1
