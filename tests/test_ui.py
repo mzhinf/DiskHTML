@@ -1,6 +1,7 @@
 """PyQt6 项目窗口测试。"""
 
 import os
+from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -12,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import QItemSelectionModel
 from PyQt6.QtWidgets import QApplication, QComboBox, QTableWidget
 
+from diskhtml.config import ScanConfig
 from diskhtml.database import Database
 from diskhtml.models import ScanProgress, ScanStatus
 from diskhtml.ui import MainWindow
@@ -238,4 +240,31 @@ class UiTests(TestCase):
                 scan = next(database.iter_scans())
             self.assertEqual(scan["status"], "COMPLETED")
             self.assertEqual(window._table.rowCount(), 1)
+            window.close()
+
+    def test_recovery_completes_through_background_thread(self) -> None:
+        """窗口恢复已取消扫描后应完成同一持久化快照。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "sample.txt").write_text("内容", encoding="utf-8")
+            path = root / "archive.sqlite3"
+            with Database(path) as database:
+                scan_id = database.create_scan("DIRECTORY", str(source), asdict(ScanConfig()))
+                database.set_scan_status(scan_id, ScanStatus.SCANNING)
+                database.set_scan_status(scan_id, ScanStatus.CANCELLED)
+            window = MainWindow(path)
+            window._table.selectRow(0)
+            window.recover_selected_scan()
+            deadline = monotonic() + 10
+            while window._scan_thread.isRunning() and monotonic() < deadline:
+                self.application.processEvents()
+                window._scan_thread.wait(50)
+            self.assertFalse(window._scan_thread.isRunning())
+            self.application.processEvents()
+            with Database.open_existing(path) as database:
+                scan = database.get_scan(scan_id)
+            self.assertEqual(scan["status"], "COMPLETED")
             window.close()
