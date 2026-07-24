@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from . import __version__
-from .config import load_config
+from .compare import compare_scans, compare_sources
+from .config import ScanConfig, load_config
 from .database import Database
 from .logging_config import configure_logging
+from .report import export_compare, export_scan
+from .scanner import Scanner
 
 
 class ChineseArgumentParser(argparse.ArgumentParser):
@@ -58,7 +63,47 @@ def build_parser() -> argparse.ArgumentParser:
 
     check_parser = subparsers.add_parser("check-db", help="执行数据库完整性检查")
     check_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+
+    scan_parser = subparsers.add_parser("scan", help="扫描文件、目录或卷")
+    scan_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    scan_parser.add_argument("source", type=Path, help="扫描源路径")
+    _add_scan_options(scan_parser)
+
+    resume_parser = subparsers.add_parser("resume", help="恢复未完成扫描")
+    resume_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    resume_parser.add_argument("scan_id", help="扫描任务标识")
+
+    status_parser = subparsers.add_parser("status", help="显示扫描任务状态")
+    status_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    status_parser.add_argument("scan_id", nargs="?", help="扫描任务标识；省略时显示全部任务")
+
+    export_parser = subparsers.add_parser("export", help="导出扫描或比较报告")
+    export_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    export_parser.add_argument("task_id", help="扫描或比较任务标识")
+    export_parser.add_argument("output", type=Path, help="新建的报告目录")
+    export_parser.add_argument("--compare", action="store_true", help="导出比较报告")
+
+    compare_parser = subparsers.add_parser("compare", help="比较两个当前文件或目录")
+    compare_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    compare_parser.add_argument("left", type=Path, help="左侧旧源路径")
+    compare_parser.add_argument("right", type=Path, help="右侧新源路径")
+    _add_scan_options(compare_parser)
+
+    verify_parser = subparsers.add_parser("verify", help="用当前路径复验历史扫描")
+    verify_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
+    verify_parser.add_argument("scan_id", help="历史扫描任务标识")
+    verify_parser.add_argument("source", type=Path, help="当前复验源路径")
+    _add_scan_options(verify_parser)
     return parser
+
+
+def _add_scan_options(parser: argparse.ArgumentParser) -> None:
+    """为扫描类命令添加有界资源和摘要选项。"""
+
+    parser.add_argument("--workers", type=int, help="Hash 工作线程数")
+    parser.add_argument("--queue-size", type=int, help="有界任务队列大小")
+    parser.add_argument("--chunk-size", type=int, help="每次读取的字节数")
+    parser.add_argument("--sha512", action="store_true", help="额外计算 SHA512")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -78,11 +123,57 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.command == "init-db":
                 print(f"数据库已就绪：{args.database}")
                 return 0
-            result = database.integrity_check()
-            print(f"数据库完整性检查：{result}")
-            return 0 if result == "ok" else 2
+            if args.command == "check-db":
+                result = database.integrity_check()
+                print(f"数据库完整性检查：{result}")
+                return 0 if result == "ok" else 2
+            if args.command == "scan":
+                scan_id = Scanner(database).start(args.source, _scan_options(config.scan, args))
+                print(f"扫描已完成：{scan_id}")
+                return 0
+            if args.command == "resume":
+                Scanner(database).resume(args.scan_id)
+                print(f"扫描已恢复并完成：{args.scan_id}")
+                return 0
+            if args.command == "status":
+                scans = [database.get_scan(args.scan_id)] if args.scan_id else database.iter_scans()
+                payload = [dict(scan) for scan in scans if scan is not None]
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                return 0 if payload else 1
+            if args.command == "export":
+                output = (
+                    export_compare(database, args.task_id, args.output)
+                    if args.compare
+                    else export_scan(database, args.task_id, args.output)
+                )
+                print(f"报告已导出：{output}")
+                return 0
+            if args.command == "compare":
+                compare_id = compare_sources(
+                    database, str(args.left), str(args.right), _scan_options(config.scan, args)
+                )
+                print(f"比较已完成：{compare_id}")
+                return 0
+            if args.command == "verify":
+                current = Scanner(database).start(args.source, _scan_options(config.scan, args))
+                compare_id = compare_scans(database, args.scan_id, current)
+                print(f"复验已完成：{compare_id}")
+                return 0
+            parser.error(f"未知命令：{args.command}")
         finally:
             database.close()
     except (OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     return 2
+
+
+def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:
+    """将命令行覆盖项合并到配置文件的安全默认值。"""
+
+    values = {
+        "workers": args.workers if args.workers is not None else defaults.workers,
+        "queue_size": args.queue_size if args.queue_size is not None else defaults.queue_size,
+        "chunk_size": args.chunk_size if args.chunk_size is not None else defaults.chunk_size,
+        "sha512": args.sha512 or defaults.sha512,
+    }
+    return replace(defaults, **values)
