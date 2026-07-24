@@ -69,3 +69,8 @@
 - 已增加目录创建/修改时间迁移，并在 HTML 快照中保留空目录和目录元数据。
 - HTML 冷备与比较报告均使用左树右详情布局；关键回归和完整回归 61/61 通过，Ruff 与格式检查通过。
 - 新版发布包尚未重建：旧 DiskHTML.exe 进程 20416 锁住发布目录；不强制结束用户进程。
+
+### 发布验收：详情与 SQLite
+
+- 已重建 DiskHTML.exe，并在 `C:\tmp\diskhtml-detail-e2e-ee10dfe6938341f68059559db3d30bcf` 完成端到端验证。
+- `backup` 同时生成 HTML 和 SQLite；`render-sqlite` 成功生成新版 HTML；空目录、详情列、比较“是否相同”和红点逻辑均已验证。

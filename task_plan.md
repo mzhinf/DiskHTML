@@ -338,5 +338,5 @@ archive_report/
 - [x] 在快照中保存目录元数据并提供 Name、Size、Modified、Created、SHA-256 详情。
 - [x] 让比较报告复用详情布局，显示是否相同和目录差异红点。
 - [x] 同时导出同名 SQLite，并提供从 SQLite 重新生成 HTML 的 GUI/CLI 入口。
-- [ ] 关闭旧 DiskHTML.exe 后重建发布包并验证真实 EXE。
-- [ ] 提交本次修改。
+- [x] 关闭旧 DiskHTML.exe 后重建发布包并验证真实 EXE。
+- [x] 已提交本次修改。
