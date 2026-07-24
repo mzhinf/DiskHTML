@@ -69,10 +69,10 @@ class MainWindow(QMainWindow):
         scan_button = QPushButton("扫描路径", self)
         scan_button.clicked.connect(self.start_scan)
         toolbar.addWidget(scan_button)
-        for label, callback in (
-        report_button = QPushButton("????", self)
+        report_button = QPushButton("\u6253\u5f00\u62a5\u544a", self)
         report_button.clicked.connect(self.open_report)
         toolbar.addWidget(report_button)
+        for label, callback in (
             ("暂停", self.pause_scan),
             ("继续", self.resume_scan),
             ("取消", self.cancel_scan),
@@ -109,6 +109,15 @@ class MainWindow(QMainWindow):
         )
         if filename:
             self.load_project(Path(filename))
+
+    def open_report(self) -> None:
+        """\u9009\u62e9\u5e76\u4ea4\u7ed9\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u6253\u5f00\u79bb\u7ebf\u62a5\u544a\u3002"""
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "\u6253\u5f00\u79bb\u7ebf\u62a5\u544a", filter="HTML \u62a5\u544a (*.html)"
+        )
+        if filename and not QDesktopServices.openUrl(QUrl.fromLocalFile(filename)):
+            self.statusBar().showMessage("\u65e0\u6cd5\u6253\u5f00\u62a5\u544a\u3002", 5_000)
 
     def start_scan(self) -> None:
         """选择目录后在后台启动扫描。"""
