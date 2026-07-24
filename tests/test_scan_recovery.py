@@ -196,6 +196,32 @@ class ScannerTests(TestCase):
             self.assertEqual(scan["source_type"], "FILE")
             self.assertEqual(record["relative_path"], "single.txt")
 
+    def test_permission_denied_file_is_audited_with_stable_error_code(self) -> None:
+        """文件读取权限被拒绝时应完成任务并保留稳定的领域错误码。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            protected = source / "protected.bin"
+            protected.write_bytes(b"protected")
+            original_open = open
+
+            def denied_open(path: object, *args: object, **kwargs: object) -> object:
+                if str(path).endswith("protected.bin"):
+                    raise PermissionError("模拟访问被拒绝")
+                return original_open(path, *args, **kwargs)
+
+            with Database(root / "archive.sqlite3") as database:
+                with patch("builtins.open", denied_open):
+                    scan_id = Scanner(database).start(source, ScanOptions(workers=1, queue_size=1))
+                record = next(database.iter_files(scan_id))
+                errors = tuple(database.iter_errors(scan_id))
+
+        self.assertEqual(record["hash_status"], HashStatus.ERROR)
+        self.assertEqual(record["error_code"], "PERMISSION_DENIED")
+        self.assertEqual(errors[0]["error_code"], "PERMISSION_DENIED")
+
     def test_missing_source_is_failed_and_audited(self) -> None:
         """不存在的源路径必须留下失败任务和错误记录。"""
 

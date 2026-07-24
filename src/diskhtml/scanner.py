@@ -16,7 +16,7 @@ from time import monotonic
 from .config import ScanConfig
 from .database import Database
 from .disk import collect_volume_info
-from .models import HashStatus, ProgressCallback, ScanProgress, ScanStatus
+from .models import ErrorCode, HashStatus, ProgressCallback, ScanProgress, ScanStatus
 from .util import normalized_path_key, relative_display_path, timestamp_to_utc, utc_now
 
 # 保留早期公开名称，后续调用方可以平滑迁移到 ScanConfig。
@@ -318,13 +318,20 @@ class Scanner:
                             ):
                                 yield path
                         except OSError as exc:
-                            self.database.record_error(scan_id, relative, "ENTRY_ERROR", str(exc))
+                            self.database.record_error(
+                                scan_id,
+                                relative,
+                                self._error_code(exc, ErrorCode.ENTRY_ERROR),
+                                str(exc),
+                            )
             except OSError as exc:
                 relative = relative_display_path(directory, root) if directory != root else ""
                 self.database.record_directory(
                     scan_id, relative, normalized_path_key(relative), None, str(exc)
                 )
-                self.database.record_error(scan_id, relative, "DIRECTORY_ERROR", str(exc))
+                self.database.record_error(
+                    scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
+                )
 
     @staticmethod
     def _is_reparse_point(entry: os.DirEntry[str]) -> bool:
@@ -425,12 +432,22 @@ class Scanner:
                     "sha256": None,
                     "sha512": None,
                     "hash_status": HashStatus.ERROR,
-                    "error_code": type(exc).__name__,
+                    "error_code": self._error_code(exc, ErrorCode.READ_ERROR),
                     "error_message": str(exc),
                     "hashed_at": utc_now(),
                 }
         assert last_result is not None
         return {**last_result, "sha256": None, "sha512": None, "hashed_at": utc_now()}
+
+    @staticmethod
+    def _error_code(exc: OSError, fallback: ErrorCode) -> ErrorCode:
+        """把系统访问异常转换为持久化的稳定领域错误码。"""
+
+        if isinstance(exc, PermissionError):
+            return ErrorCode.PERMISSION_DENIED
+        if isinstance(exc, FileNotFoundError):
+            return ErrorCode.FILE_DISAPPEARED
+        return fallback
 
     @staticmethod
     def _base_file_result(
