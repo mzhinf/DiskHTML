@@ -5,7 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -69,6 +70,9 @@ class MainWindow(QMainWindow):
         scan_button.clicked.connect(self.start_scan)
         toolbar.addWidget(scan_button)
         for label, callback in (
+        report_button = QPushButton("????", self)
+        report_button.clicked.connect(self.open_report)
+        toolbar.addWidget(report_button)
             ("暂停", self.pause_scan),
             ("继续", self.resume_scan),
             ("取消", self.cancel_scan),
