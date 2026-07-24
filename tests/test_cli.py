@@ -1,5 +1,6 @@
 """命令行帮助和数据库维护命令测试。"""
 
+import json
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -35,3 +36,45 @@ class CliTests(TestCase):
                 self.assertEqual(main(["check-db", str(path)]), 0)
             self.assertTrue(path.exists())
             self.assertIn("数据库完整性检查：ok", output.getvalue())
+
+    def test_cli_scan_export_compare_verify_and_import(self) -> None:
+        """CLI 应在不启动 GUI 时完成扫描、报告、比较、复验和导入。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            left = root / "left"
+            right = root / "right"
+            left.mkdir()
+            right.mkdir()
+            (left / "same.txt").write_text("相同", encoding="utf-8")
+            (right / "same.txt").write_text("相同", encoding="utf-8")
+            (right / "added.txt").write_text("新增", encoding="utf-8")
+            database = root / "archive.sqlite3"
+            scan_id = self._run(["scan", str(database), str(left)]).split("：", 1)[1]
+            status = json.loads(self._run(["status", str(database), scan_id]))
+            self.assertEqual(status[0]["status"], "COMPLETED")
+            self.assertEqual(
+                self._run(["export", str(database), scan_id, str(root / "scan-report")]),
+                "报告已导出：" + str(root / "scan-report"),
+            )
+            compare_id = self._run(["compare", str(database), str(left), str(right)]).split(
+                "：", 1
+            )[1]
+            self.assertIn("复验已完成", self._run(["verify", str(database), scan_id, str(left)]))
+            self.assertIn(
+                "报告已导出",
+                self._run(
+                    ["export", str(database), compare_id, str(root / "compare-report"), "--compare"]
+                ),
+            )
+            imported = root / "imported.sqlite3"
+            self.assertIn("项目数据库已导入", self._run(["import", str(imported), str(database)]))
+            self.assertIn("检查：ok", self._run(["check-db", str(imported)]))
+
+    def _run(self, argv: list[str]) -> str:
+        """运行一条 CLI 命令并返回去除末尾换行的标准输出。"""
+
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main(argv), 0)
+        return output.getvalue().strip()

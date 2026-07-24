@@ -94,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("scan_id", help="历史扫描任务标识")
     verify_parser.add_argument("source", type=Path, help="当前复验源路径")
     _add_scan_options(verify_parser)
+
+    import_parser = subparsers.add_parser("import", help="导入已有项目数据库")
+    import_parser.add_argument("database", type=Path, help="新建或覆盖的目标数据库路径")
+    import_parser.add_argument("source", type=Path, help="已有项目数据库路径")
     return parser
 
 
@@ -158,6 +162,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 current = Scanner(database).start(args.source, _scan_options(config.scan, args))
                 compare_id = compare_scans(database, args.scan_id, current)
                 print(f"复验已完成：{compare_id}")
+                return 0
+            if args.command == "import":
+                if args.database.resolve() == args.source.resolve():
+                    raise ValueError("导入源数据库不能与目标数据库相同")
+                with Database.open_existing(args.source) as source:
+                    source.connection.backup(database.connection)
+                print(f"项目数据库已导入：{args.source} -> {args.database}")
                 return 0
             parser.error(f"未知命令：{args.command}")
         finally:

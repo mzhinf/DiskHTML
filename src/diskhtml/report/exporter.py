@@ -7,6 +7,7 @@ import html
 import json
 import os
 import shutil
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -53,7 +54,7 @@ def export_scan(database: Database, scan_id: str, output_path: Path | str) -> Pa
     try:
         temporary.mkdir()
         _write_export(database, scan_id, temporary)
-        os.replace(temporary, destination)
+        _publish_directory(temporary, destination)
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -200,3 +201,16 @@ def _row_to_dict(row: Any) -> dict[str, Any] | None:
     """把 sqlite Row 转换为 JSON 可序列化字典。"""
 
     return dict(row) if row is not None else None
+
+
+def _publish_directory(temporary: Path, destination: Path) -> None:
+    """在 Windows 短暂占用目录时有限重试原子发布。"""
+
+    for attempt in range(3):
+        try:
+            os.replace(temporary, destination)
+            return
+        except PermissionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.05 * (attempt + 1))
