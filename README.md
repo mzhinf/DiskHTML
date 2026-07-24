@@ -28,7 +28,7 @@ diskhtml check-project .\archive.sqlite3
 ```
 
 配置格式、数据格式、数据库迁移、恢复语义和 CLI 操作分别见 `config.example.toml`、`docs/data-format.md`、
-`docs/database-migration.md`、`docs/recovery.md` 和 `docs/cli-guide.md`。
+`docs/database-migration.md`、`docs/recovery.md`、`docs/cli-guide.md` 和 `docs/benchmark.md`。
 ## Windows 发布构建
 
 图形界面发布包的构建命令、产物位置和发布前验证步骤见 [Windows 构建说明](docs/windows-build.md)。
