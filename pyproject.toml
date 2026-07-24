@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Windows 文件 Hash 冷备份校验工具"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["PyQt6>=6.7,<6.9"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.12,<0.13"]
@@ -17,6 +17,7 @@ dev = ["ruff>=0.12,<0.13"]
 diskhtml = "diskhtml.cli:main"
 
 [tool.setuptools.packages.find]
+diskhtml-gui = "diskhtml.ui:main"
 where = ["src"]
 
 [tool.ruff]
