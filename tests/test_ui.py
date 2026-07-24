@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import QItemSelectionModel
 from PyQt6.QtWidgets import QApplication, QTableWidget
 
 from diskhtml.database import Database
@@ -117,4 +118,29 @@ class UiTests(TestCase):
             self.assertIsNotNone(table)
             self.assertEqual(table.rowCount(), 1)
             self.assertEqual(table.item(0, 1).text(), "READ_ERROR")
+            window.close()
+
+    def test_compare_selected_scans_starts_background_thread(self) -> None:
+        """选中两个完成快照后应创建后台比较线程。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            with Database(path) as database:
+                left_id = database.create_scan("DIRECTORY", "C:/left", {})
+                database.set_scan_status(left_id, ScanStatus.SCANNING)
+                database.set_scan_status(left_id, ScanStatus.COMPLETED, completed=True)
+                right_id = database.create_scan("DIRECTORY", "C:/right", {})
+                database.set_scan_status(right_id, ScanStatus.SCANNING)
+                database.set_scan_status(right_id, ScanStatus.COMPLETED, completed=True)
+            window = MainWindow(path)
+            window._table.selectRow(0)
+            window._table.selectionModel().select(
+                window._table.model().index(1, 0),
+                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+            )
+            with patch("diskhtml.ui.CompareThread") as thread_class:
+                window.compare_selected_scans()
+            self.assertEqual(thread_class.call_args.args[0], path)
+            self.assertEqual(set(thread_class.call_args.args[1:]), {left_id, right_id})
+            thread_class.return_value.start.assert_called_once_with()
             window.close()

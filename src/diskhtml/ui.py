@@ -8,6 +8,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialog,
     QFileDialog,
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .compare import compare_scans
 from .config import ScanConfig, load_config
 from .database import Database
 from .models import ScanProgress
@@ -65,6 +67,28 @@ class ScanThread(QThread):
             self.failed.emit(str(exc))
 
 
+class CompareThread(QThread):
+    """在后台线程比较两个已完成扫描，避免阻塞 Qt 主事件循环。"""
+
+    completed = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, database_path: Path, left_scan_id: str, right_scan_id: str):
+        super().__init__()
+        self.database_path = database_path
+        self.left_scan_id = left_scan_id
+        self.right_scan_id = right_scan_id
+
+    def run(self) -> None:
+        """调用既有比较服务并通过信号返回比较任务标识。"""
+
+        try:
+            with Database(self.database_path) as database:
+                self.completed.emit(compare_scans(database, self.left_scan_id, self.right_scan_id))
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     """展示项目扫描快照的非阻塞 GUI 主窗口。"""
 
@@ -77,6 +101,8 @@ class MainWindow(QMainWindow):
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(["标识", "状态", "源路径", "已 Hash", "完成时间"])
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setCentralWidget(self._table)
         self._scan_progress_bar = QProgressBar(self)
         self._scan_progress_bar.setRange(0, 0)
@@ -117,6 +143,9 @@ class MainWindow(QMainWindow):
         error_button = QPushButton("查看错误", self)
         error_button.clicked.connect(self.show_selected_errors)
         toolbar.addWidget(error_button)
+        compare_button = QPushButton("比较选中", self)
+        compare_button.clicked.connect(self.compare_selected_scans)
+        toolbar.addWidget(compare_button)
         if database_path is not None:
             self.load_project(database_path)
 
@@ -245,6 +274,40 @@ class MainWindow(QMainWindow):
         self._scan_progress_bar.show()
         self.statusBar().showMessage(f"正在后台恢复扫描：{scan_id}")
         self._scan_thread.start()
+
+    def compare_selected_scans(self) -> None:
+        """在后台比较任务表中选中的两个已完成扫描快照。"""
+
+        if self._database_path is None:
+            self.statusBar().showMessage("请先新建或打开项目。", 5_000)
+            return
+        selected = [index.data() for index in self._table.selectionModel().selectedRows(0)]
+        if len(selected) != 2:
+            self.statusBar().showMessage("请在任务列表中选中两个扫描进行比较。", 5_000)
+            return
+        if hasattr(self, "_compare_thread") and self._compare_thread.isRunning():
+            self.statusBar().showMessage("已有比较正在运行。", 5_000)
+            return
+        with Database.open_existing(self._database_path) as database:
+            scans = [database.get_scan(scan_id) for scan_id in selected]
+        if any(scan is None or scan["status"] != "COMPLETED" for scan in scans):
+            self.statusBar().showMessage("只能比较两个已完成的扫描任务。", 5_000)
+            return
+        self._compare_thread = CompareThread(self._database_path, selected[0], selected[1])
+        self._compare_thread.completed.connect(self._compare_completed)
+        self._compare_thread.failed.connect(self._compare_failed)
+        self.statusBar().showMessage("比较正在后台运行。")
+        self._compare_thread.start()
+
+    def _compare_completed(self, compare_id: str) -> None:
+        """显示后台比较完成提示。"""
+
+        self.statusBar().showMessage(f"比较已完成：{compare_id}", 10_000)
+
+    def _compare_failed(self, message: str) -> None:
+        """显示后台比较失败原因。"""
+
+        self.statusBar().showMessage(f"比较失败：{message}", 10_000)
 
     def show_selected_errors(self) -> None:
         """显示当前选中扫描任务中已持久化的错误列表。"""
