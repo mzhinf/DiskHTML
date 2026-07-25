@@ -142,7 +142,7 @@ def _add_scan_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--queue-size", type=int, help="有界任务队列大小")
     parser.add_argument("--chunk-size", type=int, help="每次读取的字节数")
     parser.add_argument("--sha512", action="store_true", help="额外计算 SHA512")
-    parser.add_argument("--follow-links", action="store_true", help="?????? Windows ?????")
+    parser.add_argument("--follow-links", action="store_true", help="跟随软链接和 Windows 重解析点")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -15,3 +15,13 @@
 
 - 11 项 HTML/桌面界面回归测试通过，全项目 Ruff 检查通过，离线 JavaScript 语法检查通过。
 - 新版 EXE 已生成真实样本 `reworked.html` 和 `reworked.sqlite3`；样本包含显式树节点和展开按钮，不包含旧的 `createElement('details')`。
+
+
+## 2026-07-25 中文编码修复
+
+- 恢复 57 处真实损坏的中文文本。
+- 新增 `tests/test_source_encoding.py`，检查源码严格 UTF-8 解码和字符串损坏标记。
+- `.venv\Scripts\python.exe -m ruff check src tests`：通过。
+- `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`：63 项通过。
+- 重建 `build/dist/DiskHTML/DiskHTML.exe` 成功。
+- 实测 `DiskHTML.exe snapshot --help`：中文“跟随软链接和 Windows 重解析点”完整，未出现连续问号或 Unicode 替换字符。

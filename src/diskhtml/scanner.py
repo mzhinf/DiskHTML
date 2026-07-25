@@ -332,7 +332,7 @@ class Scanner:
                                     scan_id,
                                     relative,
                                     "REPARSE_POINT",
-                                    "?????????? Windows ?????",
+                                    "默认不跟随符号链接或 Windows 重解析点。",
                                 )
                                 continue
                             if entry.is_dir(follow_symlinks=options.follow_links):
