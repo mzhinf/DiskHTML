@@ -686,8 +686,8 @@ class MainWindow(QMainWindow):
         self._active_scan_controller = controller
         self._last_output = None
         self._result_panel.hide()
-        self._run_stage.setText(f"?????{stage}")
-        self._run_path.setText("?????????????")
+        self._run_stage.setText(f"{ui_text.CURRENT_STAGE}: {stage}")
+        self._run_path.setText(f"{ui_text.CURRENT_PATH}: {ui_text.WAITING_SCAN}")
         self._run_files.setText(f"{ui_text.FILES_SCANNED}: 0")
         self._run_hash.setText(f"{ui_text.HASH_PROGRESS}: 0 B")
         self._run_progress.setRange(0, 0)
@@ -710,10 +710,14 @@ class MainWindow(QMainWindow):
         self._run_progress.setRange(0, 1000)
         self._run_progress.setValue(min(1000, int(progress.files_completed * 1000 / total)))
         self._run_stage.setText(f"{ui_text.CURRENT_STAGE}: {ui_text.SCANNING_HASH_STAGE}")
-        self._run_path.setText(f"????????{progress.current_path or '???????'}")
-        self._run_files.setText(f"???????{progress.files_completed}/{progress.files_seen}")
+        self._run_path.setText(
+            f"{ui_text.CURRENT_PATH}: {progress.current_path or ui_text.WAITING_FILE}"
+        )
+        self._run_files.setText(
+            f"{ui_text.FILES_SCANNED}: {progress.files_completed}/{progress.files_seen}"
+        )
         self._run_hash.setText(
-            f"Hash ???{progress.bytes_hashed / 1024 / 1024:.1f} MiB?"
+            f"{ui_text.HASH_PROGRESS}: {progress.bytes_hashed / 1024 / 1024:.1f} MiB, "
             f"{progress.bytes_per_second / 1024 / 1024:.1f} MiB/s"
         )
 
@@ -725,7 +729,9 @@ class MainWindow(QMainWindow):
             return
         getattr(controller, action)()
         labels = {"pause": ui_text.PAUSE, "resume": ui_text.RESUME, "cancel": ui_text.CANCEL}
-        self._run_stage.setText(f"????????{labels[action]}")
+        self._run_stage.setText(
+            f"{ui_text.CURRENT_STAGE}: {ui_text.REQUESTED_ACTION}{labels[action]}"
+        )
 
     def pause_active_scan(self) -> None:
         """????????????"""
