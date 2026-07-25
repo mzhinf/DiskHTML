@@ -29,3 +29,17 @@
 
 - Git 历史进一步确认：提交 `48286dd` 一次性引入了 60 行连续问号，提交 `4eb247c` 引入了 4 行；这符合批量 PowerShell 文本替换时发生编码降级的特征，而不是人工逐字修改。
 - 因此可确认直接原因是非 UTF-8 的 PowerShell 文本传递或写回链路；控制台代码页不一致是诱因，但只有在损坏内容被写回文件时才会形成源码中的真实问号。
+
+
+## 2026-07-25 PowerShell 7 与 Unicode 转义检查
+
+- 系统已安装 PowerShell 7.6.4，路径由 `pwsh.exe` 命令解析。
+- 当前自动化终端宿主仍是 Windows PowerShell 5.1，安装 7.x 不会自动替换系统内置 `powershell.exe`。
+- 项目运行时代码仅 `src/diskhtml/disk.py` 硬编码调用 `powershell.exe`；应改为优先 PowerShell 7，同时保留 5.1 回退以兼容未安装 7.x 的电脑。
+- 非必要中文转义集中在 `archive_ui.py`、`html_archive.py`、`scanner.py` 及相关测试。
+- `html_archive.py` 中用于脚本安全转义的 `\u003c`、`\u003e`、`\u0026` 必须保留；CSV 的 `\ufeff` 是 UTF-8 BOM 功能字符，也应保留。
+- 两次尝试通过嵌套 PowerShell 命令查看源码均因外层 5.1 提前处理引号或变量而解析失败；后续不再使用该嵌套方式。
+
+- 实测同一只读磁盘查询：PowerShell 7.6.4 为约 2.42 秒，Windows PowerShell 5.1 为约 1.26 秒；7.x 功能正常但首次加载 Storage 模块更慢。
+- 扫描恢复测试原先仅等待 2 秒，无法覆盖 PowerShell 7 的正常启动时间，已调整为 5 秒。
+- 发现快照默认文件名实现使用下划线、测试和既有命名约定使用连字符，已统一为 `名称-yy-mm-dd.html`。

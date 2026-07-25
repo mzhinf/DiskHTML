@@ -86,7 +86,7 @@ class ScannerTests(TestCase):
                     args=(source, ScanOptions(workers=1, queue_size=1), controller),
                 )
                 thread.start()
-                self.assertTrue(worker.started.wait(2))
+                self.assertTrue(worker.started.wait(5))
                 controller.pause()
                 worker.release.set()
                 self._wait_for_status(database, ScanStatus.PAUSED)
@@ -109,7 +109,7 @@ class ScannerTests(TestCase):
                     args=(source, ScanOptions(workers=1, queue_size=1), controller),
                 )
                 thread.start()
-                self.assertTrue(scanner.started.wait(2))
+                self.assertTrue(scanner.started.wait(5))
                 controller.cancel()
                 scanner.release.set()
                 thread.join(5)

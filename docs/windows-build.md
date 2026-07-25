@@ -2,11 +2,13 @@
 
 ## 构建
 
+建议使用 PowerShell 7.4 或更高版本执行构建。DiskHTML 运行时会优先调用 `pwsh.exe` 获取磁盘信息；未安装 PowerShell 7 时会兼容回退到 Windows PowerShell 5.1。
+
 在项目虚拟环境中安装构建依赖：
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
-.\scripts\build_windows.ps1
+pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1
 ~~~
 
 产物位于 build\dist\DiskHTML\DiskHTML.exe。无参数时启动 HTML 快照 GUI；带参数时运行精简命令行入口，例如：

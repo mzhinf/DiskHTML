@@ -45,10 +45,10 @@ class ScannerTests(TestCase):
                 )
 
     def test_follow_links_handles_windows_junction_root(self) -> None:
-        """\u542f\u7528\u8ddf\u968f\u94fe\u63a5\u65f6\uff0c\u6839\u8def\u5f84\u4e3a Windows junction \u4e5f\u5e94\u80fd\u626b\u63cf\u3002"""
+        """启用跟随链接时，根路径为 Windows junction 也应能扫描。"""
 
         if os.name != "nt":
-            self.skipTest("\u4ec5 Windows \u652f\u6301 junction \u6d4b\u8bd5")
+            self.skipTest("仅 Windows 支持 junction 测试")
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
             target = root / "target"

@@ -41,6 +41,27 @@ class SourceTextEncodingTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_readable_source_text_uses_direct_utf8(self) -> None:
+        """可读文本应直接使用 UTF-8，仅保留具有协议或安全语义的转义。"""
+
+        allowed = {
+            "archive_ui.py": {"feff"},
+            "html_archive.py": {"0026", "003c", "003e"},
+        }
+        unicode_escape = re.compile(r"\\u([0-9a-fA-F]{4})")
+        failures: list[str] = []
+        for path in sorted(_SOURCE_ROOT.rglob("*.py")):
+            source = path.read_text(encoding="utf-8", errors="strict")
+            permitted = allowed.get(path.name, set())
+            for lineno, line in enumerate(source.splitlines(), 1):
+                for match in unicode_escape.finditer(line):
+                    if match.group(1).lower() not in permitted:
+                        failures.append(
+                            f"{path.relative_to(_SOURCE_ROOT)}:{lineno}:{match.group(0)}"
+                        )
+
+        self.assertEqual([], failures)
+
 
 if __name__ == "__main__":
     unittest.main()

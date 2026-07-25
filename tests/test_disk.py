@@ -61,3 +61,37 @@ class DiskInfoTests(TestCase):
 
         self.assertEqual(result["filesystem"], "NTFS")
         self.assertIn("物理磁盘信息采集失败", result["capture_error"])
+
+    def test_power_shell_7_is_preferred(self) -> None:
+        """同时安装两个版本时应优先使用 PowerShell 7。"""
+
+        with patch.object(
+            disk.shutil,
+            "which",
+            side_effect=lambda name: {
+                "pwsh.exe": r"C:\Program Files\PowerShell\7\pwsh.exe",
+                "powershell.exe": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            }.get(name),
+        ):
+            executable = disk._powershell_executable()
+
+        self.assertEqual(executable, r"C:\Program Files\PowerShell\7\pwsh.exe")
+
+    def test_windows_power_shell_is_kept_as_fallback(self) -> None:
+        """未安装 PowerShell 7 时应兼容 Windows PowerShell。"""
+
+        with patch.object(
+            disk.shutil,
+            "which",
+            side_effect=lambda name: (
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+                if name == "powershell.exe"
+                else None
+            ),
+        ):
+            executable = disk._powershell_executable()
+
+        self.assertEqual(
+            executable,
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        )

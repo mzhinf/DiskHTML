@@ -68,7 +68,7 @@ def render_html_snapshot_from_sqlite(database_path: Path | str, output_path: Pat
 def compare_html_archives(
     left_path: Path | str, right_path: Path | str, output_path: Path | str
 ) -> Path:
-    """\u517c\u5bb9\u6bd4\u8f83\u4e24\u4e2a HTML \u5feb\u7167\u5feb\u7167\uff0c\u5e76\u751f\u6210\u5355\u6587\u4ef6 HTML \u62a5\u544a\u3002"""
+    """兼容比较两个 HTML 快照，并生成单文件 HTML 报告。"""
     destination = _prepare_destination(output_path)
     left = read_html_snapshot(left_path)
     right = read_html_snapshot(right_path)
@@ -91,7 +91,7 @@ def compare_html_directory_to_source(
     progress_callback: Callable[[ScanProgress], None] | None = None,
     controller: ScanController | None = None,
 ) -> Path:
-    """\u5c06 HTML \u5feb\u7167\u4e2d\u9009\u5b9a\u76ee\u5f55\u4e0e\u672c\u673a\u76ee\u5f55\u6bd4\u8f83\uff0c\u5e76\u751f\u6210\u53ef\u89c6\u5316 HTML \u62a5\u544a\u3002"""
+    """将 HTML 快照中选定目录与本机目录比较，并生成可视化 HTML 报告。"""
     destination = _prepare_destination(output_path)
     archive = read_html_snapshot(archive_path)
     directory = _normalize_directory(archived_directory)
@@ -361,33 +361,33 @@ def _payload_script(payload: dict[str, Any]) -> str:
 
 
 def _page_header(title: str, description: str) -> str:
-    """\u8fd4\u56de\u5355\u6587\u4ef6\u79bb\u7ebf\u9875\u9762\u7684\u684c\u9762\u6587\u4ef6\u6d4f\u89c8\u5668\u9876\u90e8\u6846\u67b6\u3002"""
+    """返回单文件离线页面的桌面文件浏览器顶部框架。"""
 
     return _ui_page_header(title, description)
 
 
 def _scan_document(payload: dict[str, Any]) -> str:
-    """\u751f\u6210\u5305\u542b\u5d4c\u5165\u6570\u636e\u7684\u79bb\u7ebf\u5feb\u7167\u6d4f\u89c8\u9875\u9762\u3002"""
+    """生成包含嵌入数据的离线快照浏览页面。"""
 
     return _page_header(
-        f"DiskHTML \u5feb\u7167 - {payload['scan']['source_path']}",
-        "\u79bb\u7ebf\u6587\u4ef6\u5feb\u7167\uff0c\u4fdd\u7559 SHA-256 \u548c\u76ee\u5f55\u5bfc\u822a\u3002",
+        f"DiskHTML 快照 - {payload['scan']['source_path']}",
+        "离线文件快照，保留 SHA-256 和目录导航。",
     ) + _tree_document(payload)
 
 
 def _compare_document(payload: dict[str, Any]) -> str:
-    """\u751f\u6210\u4e0e\u5feb\u7167\u6d4f\u89c8\u9875\u4e00\u81f4\u3001\u989d\u5916\u663e\u793a\u72b6\u6001\u5217\u7684\u6bd4\u8f83\u62a5\u544a\u3002"""
+    """生成与快照浏览页一致、额外显示状态列的比较报告。"""
 
     return _page_header(
-        "DiskHTML \u5feb\u7167\u6bd4\u8f83",
-        "\u72b6\u6001\u5217\u663e\u793a\u5f53\u524d\u76ee\u5f55\u4e0e\u5feb\u7167\u76ee\u5f55\u7684\u6bd4\u8f83\u7ed3\u679c\u3002",
+        "DiskHTML 快照比较",
+        "状态列显示当前目录与快照目录的比较结果。",
     ) + _tree_document(payload)
 
 
 def _format_size(value: object) -> str:
-    """\u5c06\u5b57\u8282\u6570\u8f6c\u6362\u4e3a\u9759\u6001\u56de\u9000\u8868\u683c\u4f7f\u7528\u7684\u6613\u8bfb\u5355\u4f4d\u3002"""
+    """将字节数转换为静态回退表格使用的易读单位。"""
     if value is None:
-        return "\u2014"
+        return "—"
     number = float(value)
     units = ("B", "KB", "MB", "GB", "TB")
     unit = 0
@@ -398,7 +398,7 @@ def _format_size(value: object) -> str:
 
 
 def _initial_table_rows(payload: dict[str, Any]) -> str:
-    """\u9884\u5148\u5199\u5165\u6761\u76ee\uff0c\u786e\u4fdd\u6d4f\u89c8\u5668\u811a\u672c\u5f02\u5e38\u65f6\u62a5\u544a\u4e0d\u4f1a\u663e\u793a\u4e3a\u7a7a\u3002"""
+    """预先写入条目，确保浏览器脚本异常时报告不会显示为空。"""
     compare = payload.get("kind") == "compare"
     entries = payload.get("entries", []) if compare else payload.get("files", [])
     rows: list[str] = []
@@ -421,9 +421,9 @@ def _initial_table_rows(payload: dict[str, Any]) -> str:
         values = (
             item.get("relative_path") or "(未命名文件)",
             _format_size(size),
-            modified or "\u2014",
-            created or "\u2014",
-            digest or "\u2014",
+            modified or "—",
+            created or "—",
+            digest or "—",
             same,
         )
         rows.append(
@@ -433,13 +433,13 @@ def _initial_table_rows(payload: dict[str, Any]) -> str:
 
 
 def _tree_document(payload: dict[str, Any]) -> str:
-    """\u8fd4\u56de\u684c\u9762\u6587\u4ef6\u6d4f\u89c8\u5668\u7684\u76ee\u5f55\u6811\u3001\u5217\u8868\u548c\u72b6\u6001\u680f\u3002"""
+    """返回桌面文件浏览器的目录树、列表和状态栏。"""
 
     return _ui_tree_document(payload, _initial_table_rows(payload))
 
 
 def _document_footer() -> str:
-    """\u8fd4\u56de\u79bb\u7ebf\u76ee\u5f55\u6d4f\u89c8\u3001\u641c\u7d22\u3001\u6392\u5e8f\u548c\u5bfc\u51fa\u811a\u672c\u3002"""
+    """返回离线目录浏览、搜索、排序和导出脚本。"""
 
     return _ui_document_footer()
 

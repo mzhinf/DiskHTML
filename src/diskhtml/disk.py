@@ -98,7 +98,7 @@ def _collect_windows_disk_fields(result: dict[str, Any]) -> None:
         "Offset,Size,Type)} | ConvertTo-Json -Depth 4 -Compress"
     )
     completed = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        [_powershell_executable(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
         check=True,
         capture_output=True,
         text=True,
@@ -110,3 +110,13 @@ def _collect_windows_disk_fields(result: dict[str, Any]) -> None:
     result["disk_serial"] = payload.get("serial") or None
     partitions = payload.get("partitions") or []
     result["partition_json"] = json.dumps(partitions, ensure_ascii=False, separators=(",", ":"))
+
+
+def _powershell_executable() -> str:
+    """优先使用 PowerShell 7，未安装时兼容回退到 Windows PowerShell。"""
+
+    for candidate in ("pwsh.exe", "powershell.exe"):
+        executable = shutil.which(candidate)
+        if executable:
+            return executable
+    raise FileNotFoundError("未找到 PowerShell 可执行文件")

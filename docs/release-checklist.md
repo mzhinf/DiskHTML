@@ -26,7 +26,7 @@
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
-.\scripts\build_windows.ps1 -Clean
+pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 Get-FileHash .\build\dist\DiskHTML\DiskHTML.exe -Algorithm SHA256
 .\.venv\Scripts\python.exe scripts\create_release_manifest.py .\build\dist\DiskHTML .\build\DiskHTML-release-manifest.json
 ~~~

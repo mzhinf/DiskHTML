@@ -25,3 +25,23 @@
 - `.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"`：63 项通过。
 - 重建 `build/dist/DiskHTML/DiskHTML.exe` 成功。
 - 实测 `DiskHTML.exe snapshot --help`：中文“跟随软链接和 Windows 重解析点”完整，未出现连续问号或 Unicode 替换字符。
+
+
+## 2026-07-25 PowerShell 7 与 UTF-8 源码维护
+
+- 确认系统 PowerShell 7 版本为 7.6.4，当前工具宿主仍为 Windows PowerShell 5.1。
+- 磁盘信息采集改为优先解析 `pwsh.exe`，未安装时回退 `powershell.exe`。
+- 将 HTML 模板、报告渲染、扫描器和测试中的可读中文 Unicode 转义改为直接 UTF-8。
+- 保留脚本安全转义、CSV BOM 和编码回归检测所需的功能性转义。
+- 新增 PowerShell 版本选择测试和可读文本转义回归测试。
+- Ruff 静态检查通过，编码回归测试 3 项通过。
+- 受限沙箱内执行磁盘 CIM 查询返回拒绝访问；后续使用普通 Windows 权限验证。
+
+- PowerShell 7/5.1 实际磁盘查询均成功。
+- Ruff 格式化与静态检查通过。
+- 完整测试 66 项通过。
+
+- 首次 PowerShell 7 构建因运行中的工作区 DiskHTML.exe 锁定发布目录而失败；确认路径后关闭该实例，重建成功。
+- 新 EXE 命令行中文检查通过，未发现问号或 Unicode 替换字符。
+- 新 EXE SHA-256：`6C510EDAEC041297D986962A84C6289B485BFDCC68A13497075BC7B784C405D0`。
+- 最终代码扫描：可读中文 Unicode 转义 0 处，损坏问号文件 0 个。
