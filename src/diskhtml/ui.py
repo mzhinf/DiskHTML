@@ -530,7 +530,7 @@ class MainWindow(QMainWindow):
         source = Path(value)
         if value and source.name and not self._snapshot_output.text():
             self._snapshot_output.setText(
-                str(source.parent / f"{source.name}-{date.today():%y-%m-%d}.html")
+                str(source.parent / f"{source.name}_{date.today():%y-%m-%d}.html")
             )
 
     def _suggest_compare_output(self, _value: str = "") -> None:
