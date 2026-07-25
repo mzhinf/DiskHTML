@@ -370,8 +370,8 @@ def _scan_document(payload: dict[str, Any]) -> str:
     """生成包含嵌入数据的离线快照浏览页面。"""
 
     return _page_header(
-        f"DiskHTML 快照 - {payload['scan']['source_path']}",
-        "离线文件快照，保留 SHA-256 和目录导航。",
+        f"DiskHTML - {payload['scan']['source_path']}",
+        "文件系统快照，保留 SHA-256 和目录导航。",
     ) + _tree_document(payload)
 
 

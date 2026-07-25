@@ -69,10 +69,10 @@ class UiTests(TestCase):
             source.mkdir()
             window = MainWindow()
             window._snapshot_source.setText(str(source))
-            output = root / f"documents-{date.today():%y-%m-%d}.html"
+            output = root / f"documents_{date.today():%y-%m-%d}.html"
             self.assertEqual(window._snapshot_output.text(), str(output))
             self.assertEqual(
-                sqlite_snapshot_path(output).name, f"documents-{date.today():%y-%m-%d}.sqlite3"
+                sqlite_snapshot_path(output).name, f"documents_{date.today():%y-%m-%d}.sqlite3"
             )
             window.close()
 
