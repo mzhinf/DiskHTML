@@ -12,9 +12,7 @@ from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .archive_ui import document_footer as _ui_document_footer
-from .archive_ui import page_header as _ui_page_header
-from .archive_ui import tree_document as _ui_tree_document
+from .archive_ui import document_footer, page_header, tree_document
 from .compare import _iter_entries
 from .config import ScanConfig
 from .database import Database
@@ -331,7 +329,7 @@ def _write_archive(destination: Path, payload: dict[str, Any], document: str) ->
             temporary_name = handle.name
             handle.write(document)
             handle.write(_payload_script(payload))
-            handle.write(_document_footer())
+            handle.write(document_footer())
         if destination.exists():
             raise FileExistsError(f"输出 HTML 已存在，拒绝覆盖：{destination}")
         _publish_file(Path(temporary_name), destination)
@@ -362,28 +360,22 @@ def _payload_script(payload: dict[str, Any]) -> str:
     return f'<script id="{_ARCHIVE_DATA_ID}" type="application/json">{encoded}</script>'
 
 
-def _page_header(title: str, description: str) -> str:
-    """返回单文件离线页面的桌面文件浏览器顶部框架。"""
-
-    return _ui_page_header(title, description)
-
-
 def _scan_document(payload: dict[str, Any]) -> str:
     """生成包含嵌入数据的离线快照浏览页面。"""
 
-    return _page_header(
+    return page_header(
         f"DiskHTML - {payload['scan']['source_path']}",
         "文件系统快照，保留 SHA-256 和目录导航。",
-    ) + _tree_document(payload)
+    ) + tree_document(payload, _initial_table_rows(payload))
 
 
 def _compare_document(payload: dict[str, Any]) -> str:
     """生成与快照浏览页一致、额外显示状态列的比较报告。"""
 
-    return _page_header(
+    return page_header(
         "DiskHTML 快照比较",
         "状态列显示当前目录与快照目录的比较结果。",
-    ) + _tree_document(payload)
+    ) + tree_document(payload, _initial_table_rows(payload))
 
 
 def _format_size(value: object) -> str:
@@ -432,18 +424,6 @@ def _initial_table_rows(payload: dict[str, Any]) -> str:
             "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in values) + "</tr>"
         )
     return "".join(rows) or '<tr><td colspan="6">当前范围没有文件。</td></tr>'
-
-
-def _tree_document(payload: dict[str, Any]) -> str:
-    """返回桌面文件浏览器的目录树、列表和状态栏。"""
-
-    return _ui_tree_document(payload, _initial_table_rows(payload))
-
-
-def _document_footer() -> str:
-    """返回离线目录浏览、搜索、排序和导出脚本。"""
-
-    return _ui_document_footer()
 
 
 def _row_to_dict(row: Any) -> dict[str, Any] | None:

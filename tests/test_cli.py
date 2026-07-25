@@ -20,7 +20,7 @@ class CliTests(TestCase):
         with redirect_stdout(output):
             exit_code = main([])
         self.assertEqual(exit_code, 0)
-        self.assertIn("快照份校验工具", output.getvalue())
+        self.assertIn("快照与离线 HTML 比对工具", output.getvalue())
         self.assertIn("选项", output.getvalue())
         self.assertNotIn("options:", output.getvalue())
         self.assertNotIn("show this help message", output.getvalue())

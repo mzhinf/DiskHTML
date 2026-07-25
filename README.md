@@ -1,6 +1,6 @@
 # DiskHTML
 
-DiskHTML 是面向 Windows 10/11 的文件 Hash 快照校验工具。默认交付物是可离线打开、带可展开层级文件树、可搜索和可比较的单个 HTML 文件，使用方式接近 Snap2HTML。
+DiskHTML 是面向 Windows 10/11 的目录快照与文件 Hash 比对工具。默认交付物是可离线打开、带可展开层级文件树、可搜索和可比较的单个 HTML 文件，使用方式接近 Snap2HTML。
 
 Windows 用户可直接使用 DiskHTML.exe：
 

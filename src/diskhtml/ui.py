@@ -46,8 +46,6 @@ from .scanner import ScanController
 class DropPathEdit(QLineEdit):
     """支持拖放文件或目录路径的输入框。"""
 
-    path_dropped = pyqtSignal(str)
-
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -72,7 +70,6 @@ class DropPathEdit(QLineEdit):
             event.ignore()
             return
         self.setText(path)
-        self.path_dropped.emit(path)
         event.acceptProposedAction()
 
 
@@ -342,7 +339,6 @@ class MainWindow(QMainWindow):
             self._choose_snapshot_output,
         )
         self._snapshot_source.textChanged.connect(self._suggest_snapshot_output)
-        self._snapshot_source.path_dropped.connect(self._suggest_snapshot_output)
         self._snapshot_follow = QCheckBox(ui_text.FOLLOW_LINKS, page)
         self._snapshot_follow.setChecked(self._scan_config.follow_links)
         layout.addWidget(self._snapshot_follow)
@@ -391,9 +387,7 @@ class MainWindow(QMainWindow):
             self._choose_compare_output,
         )
         self._compare_archive.textChanged.connect(self._archive_changed)
-        self._compare_archive.path_dropped.connect(self._archive_changed)
         self._compare_source.textChanged.connect(self._suggest_compare_output)
-        self._compare_source.path_dropped.connect(self._suggest_compare_output)
         self._compare_follow = QCheckBox(ui_text.FOLLOW_LINKS, page)
         self._compare_follow.setChecked(self._scan_config.follow_links)
         layout.addWidget(self._compare_follow)
@@ -426,7 +420,6 @@ class MainWindow(QMainWindow):
             self._choose_sqlite_output,
         )
         self._sqlite_database.textChanged.connect(self._suggest_sqlite_output)
-        self._sqlite_database.path_dropped.connect(self._suggest_sqlite_output)
         layout.addStretch()
         button_row = QHBoxLayout()
         button_row.addStretch()

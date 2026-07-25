@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diskhtml"
 version = "0.1.0"
-description = "Windows 文件 Hash 冷备份校验工具"
+description = "Windows 文件 Hash 快照与离线 HTML 比对工具"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["PyQt6>=6.7,<6.9"]

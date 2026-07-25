@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = ChineseArgumentParser(
         prog="diskhtml",
-        description="Windows 文件 Hash 快照份校验工具",
+        description="Windows 文件 Hash 快照与离线 HTML 比对工具",
         add_help=False,
     )
     parser._positionals.title = "位置参数"

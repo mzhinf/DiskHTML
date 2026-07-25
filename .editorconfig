@@ -1,0 +1,14 @@
+# 统一编辑器保存规则，避免中文源文件被非 UTF-8 编码覆盖
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.ps1]
+end_of_line = crlf
+
+[*.{cmd,bat}]
+end_of_line = crlf

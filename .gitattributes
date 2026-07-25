@@ -1,0 +1,16 @@
+# 统一 Git 中的文本换行，避免跨平台提交产生整文件差异
+* text=auto eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Windows 可执行文件和数据库必须按二进制处理
+*.exe binary
+*.dll binary
+*.sqlite3 binary

@@ -10,3 +10,14 @@ coverage.xml
 build/
 dist/
 *.egg-info/
+
+# 测试与本地运行生成物
+tests/tmp*/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# 本地环境变量
+.env
+.env.*
+!.env.example

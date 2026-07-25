@@ -57,6 +57,21 @@ class HtmlArchiveTests(TestCase):
         self.assertIn('class="explorer"', archive_text)
         self.assertIn('class="snapshot-icon lucide lucide-hard-drive-icon', archive_text)
         self.assertIn('<path d="M2.212 11.577', archive_text)
+        self.assertIn("entryTypeIcon", archive_text)
+        self.assertIn("entry-type-icon", archive_text)
+        self.assertIn(
+            "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9",
+            archive_text,
+        )
+        self.assertIn(
+            "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8",
+            archive_text,
+        )
+        self.assertIn("M14 2v5a1 1 0 0 0 1 1h5", archive_text)
+        self.assertIn("const icon=entryTypeIcon(row.kind)", archive_text)
+        self.assertNotIn("icon.textContent=row.kind", archive_text)
+        self.assertNotIn("📁", archive_text)
+        self.assertNotIn("▧", archive_text)
         self.assertIn('id="disk-summary"', archive_text)
         self.assertIn("硬盘 ID：", archive_text)
         self.assertIn('class="tree-pane"', archive_text)
@@ -98,8 +113,6 @@ class HtmlArchiveTests(TestCase):
         self.assertIn('"left_volume":', comparison_text)
         self.assertIn('"right_volume":', comparison_text)
         self.assertIn('id="same-heading"', comparison_text)
-        self.assertNotIn('id="sources"', comparison_text)
-        self.assertNotIn("data-status=", comparison_text)
         self.assertNotIn('id="sources"', comparison_text)
         self.assertNotIn("data-status=", comparison_text)
         self.assertTrue(comparison_exists)
