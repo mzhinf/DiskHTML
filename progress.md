@@ -80,3 +80,25 @@
 - 真实生成 HTML 的交互脚本通过 Node 语法检查，指定 SVG 路径存在，旧 Emoji/占位符不存在。
 - 完整 66 项测试通过，PowerShell 7 重建成功；新 EXE 实测同时生成 HTML 和 SQLite。
 - 新 EXE SHA-256：`80DA919452F3125AF89319DC9D91B8926D26E89D912B46B40839BD9CCF0E2889`。
+
+## 2026-07-26 单文件 EXE 与目录树图标
+
+- 已确认当前构建脚本实际生成 PyInstaller `onedir` 包；截图错误是单独复制其中启动器后遗漏 `_internal` 的直接结果。
+- 已列出需同步修改的构建脚本、发布路径文档和测试。
+
+- 单文件构建脚本、发布路径文档和构建契约测试已完成初步修改。
+- 构建契约测试 1 项通过。
+- 首次 PowerShell 语法检查命令因未先声明传给 `[ref]` 的变量而失败；下一次改为先声明变量后直接调用解析器，不重复原命令。
+
+- 根据用户最新说明，将尚未提交的 onefile 方向调整为显式 onedir 加自动 ZIP 发布包。
+
+- 构建脚本现显式使用 `--onedir`，并自动生成 `build\release\DiskHTML-win-x64.zip`；发布文档已同步说明不能只复制 EXE。
+- 左侧目录树已用指定 Lucide folder / folder-open SVG 取代 CSS 矩形图标，根目录和已展开目录显示打开图标。
+- 修正后的 PowerShell 语法检查通过；7 项定向测试、Ruff 静态检查和格式检查通过。
+- 真实生成 HTML 的 JavaScript 语法检查通过，关闭/打开 SVG 路径和状态切换逻辑存在，旧 CSS 图标不存在。
+
+- PowerShell 7 干净构建完成，自动生成目录式 EXE 与发布 ZIP。
+- 发布 ZIP 已解压到独立目录实测：EXE 退出码 0，HTML/SQLite 均生成，关闭/打开文件夹 SVG 均存在。
+- 完整回归测试 67 项全部通过。
+- 最终发布包结构审计通过：ZIP 只有 `DiskHTML` 一个顶层目录，共 194 个条目，包含 `DiskHTML.exe` 与 `_internal\python312.dll`，大小约 37.32 MB。
+- 最终静态检查通过：Ruff 检查、Ruff 格式检查、UTF-8 源码测试和 git diff --check 均无错误。

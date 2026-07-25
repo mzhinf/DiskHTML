@@ -20,14 +20,16 @@
 ## 打包
 
 - [ ] 安装打包依赖。
-- [ ] 使用干净构建目录生成图形界面发布包。
-- [ ] 记录生成的可执行文件路径、大小、SHA256 和构建环境。
+- [ ] 使用干净构建目录生成目录式 EXE 和完整发布 ZIP。
+- [ ] 确认 ZIP 同时包含 `DiskHTML\DiskHTML.exe` 与 `DiskHTML\_internal`。
+- [ ] 记录生成的 EXE、ZIP 路径、大小、SHA256 和构建环境。
 - [ ] 确认 build 目录不纳入 Git。
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
 pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 Get-FileHash .\build\dist\DiskHTML\DiskHTML.exe -Algorithm SHA256
+Get-FileHash .\build\release\DiskHTML-win-x64.zip -Algorithm SHA256
 .\.venv\Scripts\python.exe scripts\create_release_manifest.py .\build\dist\DiskHTML .\build\DiskHTML-release-manifest.json
 ~~~
 

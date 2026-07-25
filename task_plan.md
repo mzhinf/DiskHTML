@@ -1,43 +1,47 @@
-# 任务计划：文件列表图标与 GitHub 发布前清理
+# 任务计划：目录式 EXE 发布包与目录树 Lucide 图标
 
 ## 目标
 
-在不改变扫描、Hash、SQLite、比对和 HTML 数据格式的前提下，为右侧文件列表的 Name 列加入离线 SVG 文件类型图标，清理确认无效或重复的代码与仓库噪声，并完成完整测试、Windows 构建和本地 Git 提交。
+明确 DiskHTML 使用 PyInstaller 目录式 EXE 发布，自动把 `DiskHTML.exe` 与 `_internal` 打成可分发 ZIP，避免只复制启动器导致 Python DLL 缺失；同时用指定 Lucide SVG 表示左侧目录树的关闭和打开状态。
 
-### Phase 1：仓库审计
-
-**Status:** complete
-
-- 检查跟踪文件、构建产物、临时目录、硬编码路径和常见敏感信息。
-- 确认可安全移除的重复信号、包装函数和测试断言。
-
-### Phase 2：SVG 与代码清理
+### Phase 1：打包诊断
 
 **Status:** complete
 
-- 在文件列表 Name 前加入指定的文件夹与文件 SVG。
-- 修复无搜索状态覆盖图标节点的问题。
-- 移除确认无效代码并维护项目定位文案。
+- 检查 PyInstaller 参数、发布目录和现有 EXE 依赖。
+- 确认截图错误来自只复制 onedir 启动器而遗漏 `_internal`。
 
-### Phase 3：GitHub 仓库维护
-
-**Status:** complete
-
-- 增加 UTF-8、换行和二进制文件约定。
-- 忽略测试临时目录、本地数据库与环境变量文件。
-- 保持 `名称_yy-mm-dd` 默认命名规则不变。
-
-### Phase 4：发布级验证
+### Phase 2：目录式 EXE 发布包
 
 **Status:** complete
 
-- Ruff 静态检查、格式检查和源码编码检查通过。
-- 完整 66 项测试通过。
-- 真实 HTML 脚本检查、PowerShell 7 构建和 EXE 产物验收通过。
+- 构建脚本显式使用 `--onedir`。
+- 自动生成包含完整 `DiskHTML` 目录的 ZIP。
+- 保持双击 GUI 和命令行子命令入口不变。
 
-### Phase 5：提交与交付
+### Phase 3：目录树 SVG
 
 **Status:** complete
 
-- 审查最终差异和敏感信息。
-- 提交本地 Git；不在未授权情况下推送到 GitHub。
+- 使用指定的 folder 与 folder-open Lucide 路径。
+- 根据目录展开状态切换图标，不引入外部资源。
+
+### Phase 4：验证
+
+**Status:** complete
+
+- 更新测试并运行完整回归。
+- 解压 ZIP 后在独立目录运行 EXE，验证 HTML 与 SQLite 生成。
+
+### Phase 5：提交
+
+**Status:** complete
+
+- 审查差异、记录 ZIP/EXE 哈希并提交 Git。
+
+## Errors Encountered
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| 图片查看工具受 Windows 分离沙箱限制，无法重新读取附件 | 1 | 使用用户消息中已显示的错误内容继续诊断，不重复调用 |
+| PowerShell 语法检查命令中的 `[ref]` 变量未预先声明 | 1 | 改为先声明 `$tokens` 与 `$errors`，再调用解析器 |

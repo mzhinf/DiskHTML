@@ -64,3 +64,42 @@
 - Git 未跟踪构建目录、虚拟环境、HTML 或 SQLite 产物；历史测试临时目录因沙箱权限残留，加入忽略规则后不再污染 Git/Ruff 扫描。
 - 项目说明中“快照份”是历史笔误，“冷备份”也不符合当前定位，统一为目录快照、文件 Hash 与离线 HTML 比对。
 - 浏览器安全策略禁止自动打开本地 `file://` 报告；真实生成 HTML 已改用 JavaScript 语法检查、SVG 路径检查和自动化测试验证。
+
+## 2026-07-26 单文件 EXE 初步诊断
+
+- 截图明确显示启动器正在查找同目录下的 `_internal/python312.dll`，这符合 PyInstaller `onedir` 发布包中只复制主 EXE、遗漏 `_internal` 目录时的错误。
+- 需要检查构建脚本是否使用默认 `onedir`/`COLLECT` 模式；若用户要求“单 EXE”，应改为 `onefile`，并用脱离构建目录的独立副本验收。
+
+## 2026-07-26 打包脚本确认结果
+
+- `scripts/build_windows.ps1` 只传入 `--windowed`，没有 `--onefile`，因此 PyInstaller 使用默认 `onedir`。
+- 当前产物结构为 `build\dist\DiskHTML\DiskHTML.exe` 加 `build\dist\DiskHTML\_internal\python312.dll` 等依赖；只复制 EXE 必然失败。
+- 单文件构建应输出到 `build\dist\DiskHTML.exe`，并在构建前清理旧的 `build\dist\DiskHTML` 目录，避免用户继续误取旧启动器。
+- `docs/diskhtml-exe-guide.md`、`docs/windows-build.md` 和 `docs/release-checklist.md` 仍引用旧的目录式产物路径，需要同步更新。
+
+## 2026-07-26 文档与目录树实现检查
+
+- Windows 构建文档、EXE 指南和发布清单都写成旧的 `build\dist\DiskHTML\DiskHTML.exe`，并包含已不符合当前三任务页界面的人工验收描述，需要一并维护。
+- 发布清单脚本接受任意发布目录，因此 onefile 模式可直接以 `build\dist` 为包目录，无需修改脚本数据格式。
+- 左侧目录树当前仍用 `.folder-icon` CSS 矩形和伪元素绘图；展开状态只控制箭头与子容器，没有参与图标渲染。
+- 应抽取通用的 Lucide SVG DOM 创建函数：文件列表继续使用关闭文件夹图标，目录树根据 `expandedPaths` 使用关闭或打开路径；根节点始终视为打开。
+
+## 2026-07-26 目录树 SVG 实现方案
+
+- 现有 `entryTypeIcon` 已具备 SVG DOM 创建流程，但路径、类别和 SVG 属性混在一个函数内。
+- 将其拆为通用 `lucideIcon`、常量路径、文件列表 `entryTypeIcon` 和目录树 `treeFolderIcon`，可以避免重复 SVG 属性代码。
+- 目录树每次展开/折叠都会重新执行 `renderTree`，因此只需把 `expandedPaths` 状态传给 `treeFolderIcon` 即可同步切换图标；根节点始终使用打开图标，无子目录的叶子节点使用关闭图标。
+
+## 2026-07-26 发布方式最终决定
+
+- 用户确认可以不是单文件，但必须是打包后的 EXE。
+- 采用显式 PyInstaller `onedir`：启动更直接，也避免 onefile 每次启动解压 Qt 运行库；构建后自动生成包含 `DiskHTML.exe` 与 `_internal` 的 ZIP。
+- 用户分发和复制的是 ZIP 或完整解压后的 `DiskHTML` 目录，不能只复制其中的 EXE。
+
+## 2026-07-26 完整发布包运行结果
+
+- PowerShell 7 干净构建成功，生成目录式 EXE 和 `build\release\DiskHTML-win-x64.zip`。
+- ZIP 解压到独立的 `C:\tmp` 后，`DiskHTML\DiskHTML.exe` 与 `DiskHTML\_internal\python312.dll` 均存在。
+- 从解压目录运行 `snapshot` 退出码为 0，成功生成 HTML 和 SQLite；报告同时包含关闭/打开文件夹 SVG。
+- EXE SHA-256：`28BCB563496FFE24E25EDBA6FE4961880C3273CF1D725729AEDA688290DC212F`。
+- ZIP SHA-256：`72EC4E325A8A5A4984CA6AEEAE52280447DF6F2277BCADCFCC28DF5869AF5FEE`。

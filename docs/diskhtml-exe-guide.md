@@ -2,7 +2,7 @@
 
 ## 启动
 
-发布包的主程序是 build\dist\DiskHTML\DiskHTML.exe。双击运行即可，不需要安装 Python 或单独管理 SQLite。
+完整发布包是 `build\release\DiskHTML-win-x64.zip`。解压后运行 `DiskHTML\DiskHTML.exe`，不需要安装 Python 或单独管理 SQLite。该 EXE 是目录式打包程序，必须保留旁边的 `_internal` 目录；只复制 EXE 会出现“Failed to load Python DLL”错误。
 
 无参数启动图形界面。界面提供：
 

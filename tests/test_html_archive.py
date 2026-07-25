@@ -59,6 +59,16 @@ class HtmlArchiveTests(TestCase):
         self.assertIn('<path d="M2.212 11.577', archive_text)
         self.assertIn("entryTypeIcon", archive_text)
         self.assertIn("entry-type-icon", archive_text)
+        self.assertIn("treeFolderIcon", archive_text)
+        self.assertIn("lucide-folder-open-icon", archive_text)
+        self.assertIn(
+            "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20",
+            archive_text,
+        )
+        self.assertIn(
+            "const icon=treeFolderIcon(expanded&&(isRoot||hasChildren))",
+            archive_text,
+        )
         self.assertIn(
             "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9",
             archive_text,
@@ -86,7 +96,9 @@ class HtmlArchiveTests(TestCase):
         self.assertIn("status-added", comparison_text)
         self.assertIn("generatedAt", archive_text)
         self.assertIn("snapshotTime", archive_text)
-        self.assertIn("folder-icon::before", archive_text)
+        self.assertIn(".tree-folder-icon{display:block", archive_text)
+        self.assertNotIn("folder-icon::before", archive_text)
+        self.assertNotIn("className='folder-icon'", archive_text)
         self.assertIn(".tree-row:hover{background:#e8e8e8}", archive_text)
         self.assertIn(".tree-row.active{background:#cce8ff}", archive_text)
         self.assertIn(".tree-toggle::before", archive_text)
