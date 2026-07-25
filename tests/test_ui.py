@@ -1,6 +1,7 @@
 """DiskHTML 桌面生成界面测试。"""
 
 import os
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -13,7 +14,7 @@ from PyQt6.QtWidgets import QApplication, QPushButton, QTabWidget
 
 from diskhtml import ui_text
 from diskhtml.config import ScanConfig
-from diskhtml.html_archive import create_html_snapshot
+from diskhtml.html_archive import create_html_snapshot, sqlite_snapshot_path
 from diskhtml.models import ScanProgress
 from diskhtml.ui import ArchiveDirectoryDialog, MainWindow
 
@@ -60,6 +61,20 @@ class UiTests(TestCase):
         self.assertFalse(window._compare_source_error.isHidden())
         self.assertFalse(window._compare_output_error.isHidden())
         window.close()
+
+    def test_snapshot_output_suggestion_includes_short_date(self) -> None:
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "documents"
+            source.mkdir()
+            window = MainWindow()
+            window._snapshot_source.setText(str(source))
+            output = root / f"documents-{date.today():%y-%m-%d}.html"
+            self.assertEqual(window._snapshot_output.text(), str(output))
+            self.assertEqual(
+                sqlite_snapshot_path(output).name, f"documents-{date.today():%y-%m-%d}.sqlite3"
+            )
+            window.close()
 
     def test_snapshot_page_starts_thread_with_follow_links(self) -> None:
         """快照页会将输入、输出和软连接开关传给后台线程。"""
