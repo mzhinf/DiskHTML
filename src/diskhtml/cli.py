@@ -16,8 +16,8 @@ from .database import Database
 from .html_archive import (
     compare_html_archives,
     compare_html_directory_to_source,
-    create_html_backup,
-    render_html_from_sqlite,
+    create_html_snapshot,
+    render_html_snapshot_from_sqlite,
 )
 from .logging_config import configure_logging
 from .report import export_compare, export_scan
@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = ChineseArgumentParser(
         prog="diskhtml",
-        description="Windows 文件 Hash 冷备份校验工具",
+        description="Windows 文件 Hash 快照份校验工具",
         add_help=False,
     )
     parser._positionals.title = "位置参数"
@@ -76,31 +76,31 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
     scan_parser.add_argument("source", type=Path, help="扫描源路径")
     _add_scan_options(scan_parser)
-    backup_parser = subparsers.add_parser("backup", help="扫描目录或文件并生成单文件 HTML 冷备")
-    backup_parser.add_argument("source", type=Path, help="扫描源路径")
-    backup_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
-    _add_scan_options(backup_parser)
+    snapshot_parser = subparsers.add_parser("snapshot", help="扫描目录或文件并生成单文件 HTML 快照")
+    snapshot_parser.add_argument("source", type=Path, help="扫描源路径")
+    snapshot_parser.add_argument("output", type=Path, help="新的 .html 快照")
+    _add_scan_options(snapshot_parser)
 
     render_sqlite_parser = subparsers.add_parser(
-        "render-sqlite", help="从 SQLite 冷备索引重新生成当前版本 HTML"
+        "render-sqlite", help="从 SQLite 快照索引重新生成当前版本 HTML"
     )
-    render_sqlite_parser.add_argument("database", type=Path, help="历史 .sqlite3 冷备索引")
-    render_sqlite_parser.add_argument("output", type=Path, help="新的 .html 冷备快照")
+    render_sqlite_parser.add_argument("database", type=Path, help="历史 .sqlite3 快照索引")
+    render_sqlite_parser.add_argument("output", type=Path, help="新的 .html 快照")
 
     compare_source_parser = subparsers.add_parser(
-        "compare-source", help="将 HTML 冷备中的目录与本机目录比较并生成单文件 HTML 报告"
+        "compare-source", help="将 HTML 快照中的目录与本机目录比较并生成单文件 HTML 报告"
     )
-    compare_source_parser.add_argument("archive", type=Path, help="历史 .html 冷备快照")
-    compare_source_parser.add_argument("archived_directory", help="冷备中选择的目录；根目录使用 .")
+    compare_source_parser.add_argument("archive", type=Path, help="历史 .html 快照")
+    compare_source_parser.add_argument("archived_directory", help="快照中选择的目录；根目录使用 .")
     compare_source_parser.add_argument("source", type=Path, help="本机当前目录")
     compare_source_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
     _add_scan_options(compare_source_parser)
 
     compare_html_parser = subparsers.add_parser(
-        "compare-html", help="比较两个 HTML 冷备快照并生成单文件 HTML 报告"
+        "compare-html", help="比较两个 HTML 快照并生成单文件 HTML 报告"
     )
-    compare_html_parser.add_argument("left", type=Path, help="左侧旧冷备快照 .html")
-    compare_html_parser.add_argument("right", type=Path, help="右侧新冷备快照 .html")
+    compare_html_parser.add_argument("left", type=Path, help="左侧旧快照 .html")
+    compare_html_parser.add_argument("right", type=Path, help="右侧新快照 .html")
     compare_html_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
 
     resume_parser = subparsers.add_parser("resume", help="恢复未完成扫描")
@@ -157,13 +157,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         configure_logging(config.log_level, config.json_log)
-        if args.command == "backup":
-            output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
-            print(f"HTML 冷备快照已生成：{output}")
+        if args.command == "snapshot":
+            output = create_html_snapshot(
+                args.source, args.output, _scan_options(config.scan, args)
+            )
+            print(f"HTML 快照已生成：{output}")
             return 0
         if args.command == "render-sqlite":
-            output = render_html_from_sqlite(args.database, args.output)
-            print(f"HTML 冷备快照已从 SQLite 生成：{output}")
+            output = render_html_snapshot_from_sqlite(args.database, args.output)
+            print(f"HTML 快照已从 SQLite 生成：{output}")
             return 0
         if args.command == "compare-source":
             output = compare_html_directory_to_source(

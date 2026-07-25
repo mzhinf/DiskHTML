@@ -1,14 +1,15 @@
-"""DiskHTML 单文件 HTML 冷备图形界面。"""
+"""DiskHTML 单文件 HTML 快照图形界面。"""
 
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -23,19 +24,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .config import ScanConfig, load_config
+from .config import ScanConfig
 from .html_archive import (
     compare_html_directory_to_source,
-    create_html_backup,
-    html_backup_directories,
-    render_html_from_sqlite,
+    create_html_snapshot,
+    html_snapshot_directories,
+    render_html_snapshot_from_sqlite,
 )
 from .models import ScanProgress
 from .scanner import ScanController
 
 
-class HtmlBackupThread(QThread):
-    """在后台扫描路径并生成单文件 HTML 冷备，避免阻塞主界面。"""
+class HtmlSnapshotThread(QThread):
+    """在后台扫描路径并生成单文件 HTML 快照，避免阻塞主界面。"""
 
     completed = pyqtSignal(str)
     progress = pyqtSignal(object)
@@ -51,10 +52,10 @@ class HtmlBackupThread(QThread):
         self.controller = controller
 
     def run(self) -> None:
-        """调用 HTML 冷备服务并将进度、结果或错误发回主线程。"""
+        """调用 HTML 快照服务并将进度、结果或错误发回主线程。"""
 
         try:
-            output = create_html_backup(
+            output = create_html_snapshot(
                 self.source,
                 self.output,
                 self.config,
@@ -67,7 +68,7 @@ class HtmlBackupThread(QThread):
 
 
 class SqliteHtmlRenderThread(QThread):
-    """在后台从 SQLite 冷备索引生成当前版本 HTML。"""
+    """在后台从 SQLite 快照索引生成当前版本 HTML。"""
 
     completed = pyqtSignal(str)
     failed = pyqtSignal(str)
@@ -81,13 +82,13 @@ class SqliteHtmlRenderThread(QThread):
         """读取已完成扫描并输出当前版本的单文件 HTML。"""
 
         try:
-            self.completed.emit(str(render_html_from_sqlite(self.database, self.output)))
+            self.completed.emit(str(render_html_snapshot_from_sqlite(self.database, self.output)))
         except (OSError, RuntimeError, ValueError) as exc:
             self.failed.emit(str(exc))
 
 
 class HtmlDirectoryCompareThread(QThread):
-    """在后台将 HTML 冷备中的已选目录与本机目录比较。"""
+    """在后台将 HTML 快照中的已选目录与本机目录比较。"""
 
     completed = pyqtSignal(str)
     progress = pyqtSignal(object)
@@ -129,15 +130,15 @@ class HtmlDirectoryCompareThread(QThread):
 
 
 class ArchiveDirectoryDialog(QDialog):
-    """展示 HTML 冷备目录树并让用户选择一个历史目录。"""
+    """展示 HTML 快照目录树并让用户选择一个历史目录。"""
 
     def __init__(self, archive: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("从 HTML 冷备选择目录")
+        self.setWindowTitle("从 HTML 快照选择目录")
         self.resize(620, 480)
         self._tree = QTreeWidget(self)
-        self._tree.setHeaderLabel(f"冷备目录：{archive.name}")
-        self._build_tree(html_backup_directories(archive))
+        self._tree.setHeaderLabel(f"快照目录：{archive.name}")
+        self._build_tree(html_snapshot_directories(archive))
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
@@ -160,7 +161,7 @@ class ArchiveDirectoryDialog(QDialog):
     def _build_tree(self, directories: tuple[str, ...]) -> None:
         """将相对目录清单渲染为可选择的树，保留每项的完整相对路径。"""
 
-        root = QTreeWidgetItem(self._tree, ["冷备根目录"])
+        root = QTreeWidgetItem(self._tree, ["快照根目录"])
         root.setData(0, Qt.ItemDataRole.UserRole, "")
         items = {"": root}
         for directory in directories:
@@ -179,11 +180,11 @@ class ArchiveDirectoryDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    """提供 HTML 冷备、目录选择和本机目录比较工作流。"""
+    """提供 HTML 快照、目录选择和本机目录比较工作流。"""
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("DiskHTML - HTML 冷备")
+        self.setWindowTitle("DiskHTML - HTML 快照")
         self.resize(760, 360)
         self._scan_config = ScanConfig()
         self._setup_central_content()
@@ -193,38 +194,42 @@ class MainWindow(QMainWindow):
         self._scan_progress_bar.setTextVisible(False)
         self._scan_progress_bar.hide()
         self.statusBar().addPermanentWidget(self._scan_progress_bar)
-        self.statusBar().showMessage("选择“生成冷备 HTML”开始。")
+        self.statusBar().showMessage("选择“生成快照 HTML”开始。")
 
     def _setup_central_content(self) -> None:
         """创建说明性主界面，避免暴露 SQLite 项目管理功能。"""
 
         content = QWidget(self)
         layout = QVBoxLayout(content)
-        title = QLabel("将目录保存为可离线打开的 HTML 冷备", content)
+        title = QLabel("将目录保存为可离线打开的 HTML 快照", content)
         title.setStyleSheet("font-size: 20px; font-weight: 600;")
         description = QLabel(
-            "1. 生成冷备 HTML：选择目录和保存位置，完成后得到一个可搜索的离线快照。"
-            "\n2. 比较冷备目录：从 HTML 冷备树选择历史目录，再选择本机目录。"
+            "1. 生成快照 HTML：选择目录和保存位置，完成后得到一个可搜索的离线快照。"
+            "\n2. 比较快照目录：从 HTML 快照树选择历史目录，再选择本机目录。"
             "\n扫描期间使用临时索引保障可靠性；交付物始终是单个 HTML 文件。",
             content,
         )
         description.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(description)
+        self._follow_links = QCheckBox(
+            "\u8ddf\u968f\u8f6f\u94fe\u63a5\u548c Windows \u91cd\u89e3\u6790\u76ee\u5f55", content
+        )
+        self._follow_links.setChecked(self._scan_config.follow_links)
+        self._follow_links.toggled.connect(self._set_follow_links)
+        layout.addWidget(self._follow_links)
         layout.addStretch()
         self.setCentralWidget(content)
 
     def _setup_toolbar(self) -> None:
         """仅保留 HTML 工作流真正需要的操作入口。"""
 
-        toolbar = QToolBar("HTML 冷备", self)
+        toolbar = QToolBar("HTML 快照", self)
         self.addToolBar(toolbar)
         for label, callback in (
-            ("生成冷备 HTML", self.create_backup),
-            ("比较冷备目录", self.compare_archive_directory),
-            ("从 SQLite 生成 HTML", self.render_sqlite_backup),
-            ("打开报告", self.open_report),
-            ("扫描配置", self.load_scan_config),
+            ("\u751f\u6210\u5feb\u7167 HTML", self.create_snapshot),
+            ("\u6bd4\u8f83\u5feb\u7167\u76ee\u5f55", self.compare_archive_directory),
+            ("\u4ece SQLite \u751f\u6210\u5feb\u7167 HTML", self.render_sqlite_snapshot),
         ):
             button = QPushButton(label, self)
             button.clicked.connect(callback)
@@ -239,63 +244,68 @@ class MainWindow(QMainWindow):
             button.clicked.connect(callback)
             toolbar.addWidget(button)
 
-    def create_backup(self) -> None:
-        """选择目录和 HTML 输出位置后启动后台冷备。"""
+    def create_snapshot(self) -> None:
+        """选择目录和 HTML 输出位置后启动后台快照。"""
 
-        source = QFileDialog.getExistingDirectory(self, "选择需要冷备的目录")
+        source = QFileDialog.getExistingDirectory(self, "选择需要快照的目录")
         if not source:
             return
         source_path = Path(source)
         output, _ = QFileDialog.getSaveFileName(
             self,
-            "保存 HTML 冷备",
-            str(source_path.parent / f"{source_path.name}-冷备.html"),
+            "保存 HTML 快照",
+            str(source_path.parent / f"{source_path.name}-快照.html"),
             "HTML 文件 (*.html)",
         )
         if output:
-            self._start_backup(source_path, Path(output))
+            self._start_snapshot(source_path, Path(output))
 
-    def _start_backup(self, source: Path, output: Path) -> None:
-        """创建带可暂停控制器的后台 HTML 冷备线程。"""
+    def _set_follow_links(self, enabled: bool) -> None:
+        """\u540c\u6b65\u754c\u9762\u8f6f\u94fe\u63a5\u5f00\u5173\u5230\u540e\u7eed\u626b\u63cf\u548c\u6bd4\u8f83\u4efb\u52a1\u3002"""
+
+        self._scan_config = replace(self._scan_config, follow_links=enabled)
+
+    def _start_snapshot(self, source: Path, output: Path) -> None:
+        """创建带可暂停控制器的后台 HTML 快照线程。"""
 
         if self._active_scan_running():
             self.statusBar().showMessage("已有扫描任务正在运行。", 5_000)
             return
         controller = ScanController()
-        thread = HtmlBackupThread(source, output, self._scan_config, controller)
+        thread = HtmlSnapshotThread(source, output, self._scan_config, controller)
         thread.progress.connect(self._scan_progress)
-        thread.completed.connect(self._backup_completed)
+        thread.completed.connect(self._snapshot_completed)
         thread.failed.connect(self._scan_failed)
         self._set_active_scan(thread, controller)
         self._scan_progress_bar.show()
-        self.statusBar().showMessage("正在后台生成 HTML 冷备。")
+        self.statusBar().showMessage("正在后台生成 HTML 快照。")
         thread.start()
 
-    def render_sqlite_backup(self) -> None:
-        """选择历史 SQLite 冷备索引并生成当前版本 HTML 页面。"""
+    def render_sqlite_snapshot(self) -> None:
+        """选择历史 SQLite 快照索引并生成当前版本 HTML 页面。"""
 
         database, _ = QFileDialog.getOpenFileName(
-            self, "选择 SQLite 冷备索引", filter="SQLite 文件 (*.sqlite3 *.sqlite);;所有文件 (*)"
+            self, "选择 SQLite 快照索引", filter="SQLite 文件 (*.sqlite3 *.sqlite);;所有文件 (*)"
         )
         if not database:
             return
         output, _ = QFileDialog.getSaveFileName(
-            self, "从 SQLite 生成 HTML 冷备", filter="HTML 文件 (*.html)"
+            self, "从 SQLite 生成 HTML 快照", filter="HTML 文件 (*.html)"
         )
         if not output or self._active_scan_running():
             return
         thread = SqliteHtmlRenderThread(Path(database), Path(output))
-        thread.completed.connect(self._backup_completed)
+        thread.completed.connect(self._snapshot_completed)
         thread.failed.connect(self._scan_failed)
         self._active_scan_thread = thread
-        self.statusBar().showMessage("正在从 SQLite 冷备索引生成 HTML。")
+        self.statusBar().showMessage("正在从 SQLite 快照索引生成 HTML。")
         thread.start()
 
     def compare_archive_directory(self) -> None:
-        """从 HTML 冷备树选择目录，并与用户选择的本机目录比较。"""
+        """从 HTML 快照树选择目录，并与用户选择的本机目录比较。"""
 
         filename, _ = QFileDialog.getOpenFileName(
-            self, "选择历史 HTML 冷备", filter="HTML 文件 (*.html)"
+            self, "选择历史 HTML 快照", filter="HTML 文件 (*.html)"
         )
         if not filename:
             return
@@ -303,7 +313,7 @@ class MainWindow(QMainWindow):
         try:
             dialog = ArchiveDirectoryDialog(archive, self)
         except (OSError, ValueError) as exc:
-            self.statusBar().showMessage(f"无法读取 HTML 冷备：{exc}", 10_000)
+            self.statusBar().showMessage(f"无法读取 HTML 快照：{exc}", 10_000)
             return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -322,7 +332,7 @@ class MainWindow(QMainWindow):
     def _start_compare(
         self, archive: Path, archived_directory: str, source: Path, output: Path
     ) -> None:
-        """创建后台“冷备目录对本机目录”比较线程。"""
+        """创建后台“快照目录对本机目录”比较线程。"""
 
         if self._active_scan_running():
             self.statusBar().showMessage("已有扫描任务正在运行。", 5_000)
@@ -351,34 +361,6 @@ class MainWindow(QMainWindow):
         thread = getattr(self, "_active_scan_thread", None)
         return thread is not None and thread.isRunning()
 
-    def open_report(self) -> None:
-        """用系统默认浏览器打开冷备或比较 HTML。"""
-
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "打开 HTML 报告", filter="HTML 文件 (*.html)"
-        )
-        if filename and not QDesktopServices.openUrl(QUrl.fromLocalFile(filename)):
-            self.statusBar().showMessage("无法打开 HTML 报告。", 5_000)
-
-    def load_scan_config(self) -> None:
-        """从 TOML 文件加载扫描并发、排除规则和摘要选项。"""
-
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "加载扫描配置", filter="TOML 配置 (*.toml);;所有文件 (*)"
-        )
-        if not filename:
-            return
-        try:
-            self._scan_config = load_config(Path(filename)).scan
-        except (OSError, ValueError) as exc:
-            self.statusBar().showMessage(f"扫描配置加载失败：{exc}", 10_000)
-            return
-        self.statusBar().showMessage(
-            f"已加载扫描配置：{self._scan_config.workers} 个工作线程，"
-            f"{len(self._scan_config.exclude_dirs)} 条目录排除规则。",
-            10_000,
-        )
-
     def _active_scan_control(self, action: str) -> None:
         """向当前扫描发送暂停、继续或取消请求。"""
 
@@ -406,7 +388,7 @@ class MainWindow(QMainWindow):
         self._active_scan_control("cancel")
 
     def _scan_progress(self, progress: ScanProgress) -> None:
-        """在状态栏显示冷备或比较扫描的实时进度。"""
+        """在状态栏显示快照或比较扫描的实时进度。"""
 
         self._scan_progress_bar.show()
         eta_text = (
@@ -421,11 +403,11 @@ class MainWindow(QMainWindow):
             f"ETA {eta_text}，{progress.current_path or ''}"
         )
 
-    def _backup_completed(self, output: str) -> None:
-        """显示 HTML 冷备生成完成信息。"""
+    def _snapshot_completed(self, output: str) -> None:
+        """显示 HTML 快照生成完成信息。"""
 
         self._scan_progress_bar.hide()
-        self.statusBar().showMessage(f"HTML 冷备已生成：{output}", 10_000)
+        self.statusBar().showMessage(f"HTML 快照已生成：{output}", 10_000)
 
     def _compare_completed(self, output: str) -> None:
         """显示 HTML 比较报告生成完成信息。"""
@@ -434,14 +416,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"HTML 比较报告已生成：{output}", 10_000)
 
     def _scan_failed(self, message: str) -> None:
-        """显示冷备或比较扫描失败原因。"""
+        """显示快照或比较扫描失败原因。"""
 
         self._scan_progress_bar.hide()
         self.statusBar().showMessage(f"扫描失败：{message}", 10_000)
 
 
 def main() -> int:
-    """启动 HTML 冷备图形界面。"""
+    """启动 HTML 快照图形界面。"""
 
     application = QApplication(sys.argv)
     window = MainWindow()

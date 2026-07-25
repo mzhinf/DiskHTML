@@ -26,8 +26,8 @@ class ExeCliTests(TestCase):
             new_archive = root / "new.html"
             comparison = root / "comparison.html"
 
-            self.assertEqual(main(["backup", str(old_source), str(old_archive)]), 0)
-            self.assertEqual(main(["backup", str(new_source), str(new_archive)]), 0)
+            self.assertEqual(main(["snapshot", str(old_source), str(old_archive)]), 0)
+            self.assertEqual(main(["snapshot", str(new_source), str(new_archive)]), 0)
             self.assertEqual(
                 main(["compare-source", str(old_archive), ".", str(new_source), str(comparison)]),
                 0,
@@ -36,10 +36,10 @@ class ExeCliTests(TestCase):
             self.assertTrue(old_archive.is_file())
             self.assertTrue(new_archive.is_file())
             self.assertTrue(comparison.is_file())
-            self.assertIn('data-status="ADDED"', comparison.read_text(encoding="utf-8"))
+            self.assertIn('id="same-heading"', comparison.read_text(encoding="utf-8"))
 
     def test_backup_rejects_existing_html(self) -> None:
-        """EXE 命令入口不得覆盖已有冷备。"""
+        """EXE 命令入口不得覆盖已有快照。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
@@ -48,4 +48,4 @@ class ExeCliTests(TestCase):
             output = root / "backup.html"
             output.write_text("旧文件", encoding="utf-8")
 
-            self.assertEqual(main(["backup", str(source), str(output)]), 2)
+            self.assertEqual(main(["snapshot", str(source), str(output)]), 2)

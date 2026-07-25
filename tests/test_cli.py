@@ -20,7 +20,7 @@ class CliTests(TestCase):
         with redirect_stdout(output):
             exit_code = main([])
         self.assertEqual(exit_code, 0)
-        self.assertIn("冷备份校验工具", output.getvalue())
+        self.assertIn("快照份校验工具", output.getvalue())
         self.assertIn("选项", output.getvalue())
         self.assertNotIn("options:", output.getvalue())
         self.assertNotIn("show this help message", output.getvalue())
@@ -73,7 +73,7 @@ class CliTests(TestCase):
             self.assertIn("检查：ok", self._run(["check-db", str(imported)]))
 
     def test_cli_backup_and_compare_html(self) -> None:
-        """CLI 默认冷备流程应直接生成可视化 HTML，并可比较两个快照。"""
+        """CLI 默认快照流程应直接生成可视化 HTML，并可比较两个快照。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
@@ -90,10 +90,10 @@ class CliTests(TestCase):
             source_comparison = root / "source-comparison.html"
 
             self.assertIn(
-                "HTML 冷备快照已生成", self._run(["backup", str(old_source), str(old_archive)])
+                "HTML 快照已生成", self._run(["snapshot", str(old_source), str(old_archive)])
             )
             self.assertIn(
-                "HTML 冷备快照已生成", self._run(["backup", str(new_source), str(new_archive)])
+                "HTML 快照已生成", self._run(["snapshot", str(new_source), str(new_archive)])
             )
             self.assertIn(
                 "HTML 目录比较报告已生成",
@@ -116,8 +116,8 @@ class CliTests(TestCase):
             self.assertTrue(new_archive.is_file())
             self.assertTrue(source_comparison.is_file())
             self.assertTrue(comparison.is_file())
-            self.assertIn('data-status="ADDED"', source_comparison.read_text(encoding="utf-8"))
-            self.assertIn('data-status="ADDED"', comparison.read_text(encoding="utf-8"))
+            self.assertIn('id="same-heading"', source_comparison.read_text(encoding="utf-8"))
+            self.assertIn('id="same-heading"', comparison.read_text(encoding="utf-8"))
 
     def _run(self, argv: list[str]) -> str:
         """运行一条 CLI 命令并返回去除末尾换行的标准输出。"""

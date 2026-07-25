@@ -1,6 +1,8 @@
 """扫描结果批量提交集成测试。"""
 
 import hashlib
+import os
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -41,3 +43,31 @@ class ScannerTests(TestCase):
                 self.assertEqual(
                     records["b.txt"]["sha256"], hashlib.sha256(b"beta").hexdigest().upper()
                 )
+
+    def test_follow_links_handles_windows_junction_root(self) -> None:
+        """\u542f\u7528\u8ddf\u968f\u94fe\u63a5\u65f6\uff0c\u6839\u8def\u5f84\u4e3a Windows junction \u4e5f\u5e94\u80fd\u626b\u63cf\u3002"""
+
+        if os.name != "nt":
+            self.skipTest("\u4ec5 Windows \u652f\u6301 junction \u6d4b\u8bd5")
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            target = root / "target"
+            junction = root / "junction"
+            target.mkdir()
+            (target / "linked.txt").write_text("linked", encoding="utf-8")
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with Database(root / "follow.sqlite3") as database:
+                scan_id = Scanner(database).start(
+                    junction, ScanOptions(workers=1, queue_size=1, follow_links=True)
+                )
+                self.assertEqual(
+                    [row["relative_path"] for row in database.iter_files(scan_id)], ["linked.txt"]
+                )
+            with Database(root / "default.sqlite3") as database:
+                with self.assertRaises(ValueError):
+                    Scanner(database).start(junction, ScanOptions(workers=1, queue_size=1))

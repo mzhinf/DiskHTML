@@ -12,34 +12,34 @@ from . import __version__
 from .config import ScanConfig, load_config
 from .html_archive import (
     compare_html_directory_to_source,
-    create_html_backup,
-    render_html_from_sqlite,
+    create_html_snapshot,
+    render_html_snapshot_from_sqlite,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建仅包含 HTML 冷备工作流的 EXE 参数解析器。"""
+    """构建仅包含 HTML 快照工作流的 EXE 参数解析器。"""
 
     parser = argparse.ArgumentParser(
         prog="DiskHTML",
-        description="生成和比较可离线打开的 HTML 冷备。",
+        description="生成和比较可离线打开的 HTML 快照。",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", type=Path, help="TOML 扫描配置文件")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    backup = commands.add_parser("backup", help="扫描目录或文件并生成单文件 HTML 冷备")
-    backup.add_argument("source", type=Path, help="扫描源路径")
-    backup.add_argument("output", type=Path, help="新的 .html 冷备快照")
-    _add_scan_options(backup)
+    snapshot = commands.add_parser("snapshot", help="扫描目录或文件并生成单文件 HTML 快照")
+    snapshot.add_argument("source", type=Path, help="扫描源路径")
+    snapshot.add_argument("output", type=Path, help="新的 .html 快照")
+    _add_scan_options(snapshot)
 
-    render = commands.add_parser("render-sqlite", help="从 SQLite 冷备索引重新生成当前版本 HTML")
-    render.add_argument("database", type=Path, help="历史 .sqlite3 冷备索引")
-    render.add_argument("output", type=Path, help="新的 .html 冷备快照")
+    render = commands.add_parser("render-sqlite", help="从 SQLite 快照索引重新生成当前版本 HTML")
+    render.add_argument("database", type=Path, help="历史 .sqlite3 快照索引")
+    render.add_argument("output", type=Path, help="新的 .html 快照")
 
-    compare = commands.add_parser("compare-source", help="将 HTML 冷备中选定目录与本机目录比较")
-    compare.add_argument("archive", type=Path, help="历史冷备快照 .html")
-    compare.add_argument("archived_directory", help="HTML 冷备中的相对目录，根目录使用 .")
+    compare = commands.add_parser("compare-source", help="将 HTML 快照中选定目录与本机目录比较")
+    compare.add_argument("archive", type=Path, help="历史快照 .html")
+    compare.add_argument("archived_directory", help="HTML 快照中的相对目录，根目录使用 .")
     compare.add_argument("source", type=Path, help="本机当前目录")
     compare.add_argument("output", type=Path, help="新的 .html 比较报告")
     _add_scan_options(compare)
@@ -47,18 +47,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """执行 EXE 支持的 HTML 冷备或 HTML 比较命令。"""
+    """执行 EXE 支持的 HTML 快照或 HTML 比较命令。"""
 
     args = build_parser().parse_args(argv)
     try:
         config = load_config(args.config)
-        if args.command == "backup":
-            output = create_html_backup(args.source, args.output, _scan_options(config.scan, args))
-            _print(f"HTML 冷备快照及 SQLite 索引已生成：{output}")
+        if args.command == "snapshot":
+            output = create_html_snapshot(
+                args.source, args.output, _scan_options(config.scan, args)
+            )
+            _print(f"HTML 快照及 SQLite 索引已生成：{output}")
             return 0
         if args.command == "render-sqlite":
-            output = render_html_from_sqlite(args.database, args.output)
-            _print(f"HTML 冷备快照已从 SQLite 生成：{output}")
+            output = render_html_snapshot_from_sqlite(args.database, args.output)
+            _print(f"HTML 快照已从 SQLite 生成：{output}")
             return 0
         output = compare_html_directory_to_source(
             args.archive,
@@ -75,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _add_scan_options(parser: argparse.ArgumentParser) -> None:
-    """为 EXE 冷备命令添加可选扫描参数。"""
+    """为 EXE 快照命令添加可选扫描参数。"""
 
     parser.add_argument("--workers", type=int, help="Hash 工作线程数")
     parser.add_argument("--queue-size", type=int, help="有界任务队列大小")

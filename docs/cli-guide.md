@@ -6,21 +6,21 @@
 .\.venv\Scripts\python.exe -m diskhtml --help
 ~~~
 
-## 默认工作流：HTML 冷备和目录比较
+## 默认工作流：HTML 快照和目录比较
 
-扫描目录或单个文件，并直接生成一个可视化 HTML 冷备：
-
-~~~powershell
-.\.venv\Scripts\python.exe -m diskhtml backup D:\资料 .\资料冷备.html --workers 2 --queue-size 32 --chunk-size 4194304 --sha512
-~~~
-
-从历史冷备 HTML 的文件树选择一个目录，并将其和本机目录比较：
+扫描目录或单个文件，并直接生成一个可视化 HTML 快照：
 
 ~~~powershell
-.\.venv\Scripts\python.exe -m diskhtml compare-source .\资料冷备.html 资料\照片 E:\当前照片 .\照片比较.html
+.\.venv\Scripts\python.exe -m diskhtml snapshot D:\资料 .\资料快照.html --workers 2 --queue-size 32 --chunk-size 4194304 --sha512
 ~~~
 
-若比较冷备根目录，第二个位置参数使用 `.`。输出 HTML 必须不存在。每次 `backup` 同时生成同名 `.sqlite3` 冷备索引；冷备和比较报告都可用浏览器离线打开。可用以下命令从 SQLite 重建当前版本的 HTML：\n\n~~~powershell\n.\\.venv\\Scripts\\python.exe -m diskhtml render-sqlite .\\资料冷备.sqlite3 .\\资料冷备-新版.html\n~~~
+从历史快照 HTML 的文件树选择一个目录，并将其和本机目录比较：
+
+~~~powershell
+.\.venv\Scripts\python.exe -m diskhtml compare-source .\资料快照.html 资料\照片 E:\当前照片 .\照片比较.html
+~~~
+
+若比较快照根目录，第二个位置参数使用 `.`。输出 HTML 必须不存在。每次 `snapshot` 同时生成同名 `.sqlite3` 快照索引；快照和比较报告都可用浏览器离线打开。可用以下命令从 SQLite 重建当前版本的 HTML：\n\n~~~powershell\n.\\.venv\\Scripts\\python.exe -m diskhtml render-sqlite .\\资料快照.sqlite3 .\\资料快照-新版.html\n~~~
 
 `compare-html` 仍保留为兼容旧自动化脚本的高级命令；DiskHTML.exe 的默认界面和命令不提供该入口。EXE 的完整操作见 [DiskHTML.exe 使用指南](diskhtml-exe-guide.md)。
 

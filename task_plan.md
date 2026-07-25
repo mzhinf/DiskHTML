@@ -340,3 +340,8 @@ archive_report/
 - [x] 同时导出同名 SQLite，并提供从 SQLite 重新生成 HTML 的 GUI/CLI 入口。
 - [x] 关闭旧 DiskHTML.exe 后重建发布包并验证真实 EXE。
 - [x] 已提交本次修改。
+## 本轮完成
+- 移除已移除的报告查看与扫描配置入口。
+- 比较报告复用快照布局，仅增加状态列。
+- 修复 Windows junction 根目录软链接跟随。
+- 已通过 61 项测试、 Ruff 检查与格式检查。

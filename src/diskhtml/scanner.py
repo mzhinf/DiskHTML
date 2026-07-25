@@ -89,8 +89,12 @@ class Scanner:
         """创建并运行一个新扫描任务。"""
 
         requested_path = Path(source).expanduser()
-        source_is_link = requested_path.is_symlink()
-        path = requested_path.absolute() if source_is_link and options.follow_links else requested_path.resolve(strict=False)
+        source_is_link = self._is_reparse_path(requested_path)
+        path = (
+            requested_path.absolute()
+            if source_is_link and options.follow_links
+            else requested_path.resolve(strict=False)
+        )
         source_type = (
             "FILE"
             if path.is_file()
@@ -293,7 +297,7 @@ class Scanner:
     def _iter_paths(
         self, source: Path, root: Path, options: ScanOptions, scan_id: str
     ) -> Iterator[Path]:
-        """??????????????????????????????????"""
+        """\u8bc6\u522b\u7b26\u53f7\u94fe\u63a5\u548c Windows junction\uff0c\u786e\u4fdd\u6839\u8def\u5f84\u4e0e\u5b50\u9879\u4f7f\u7528\u4e00\u81f4\u89c4\u5219\u3002"""
 
         if source.is_file():
             if not self._excluded_file(source, options):
@@ -366,6 +370,21 @@ class Scanner:
                 self.database.record_error(
                     scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
                 )
+
+    @staticmethod
+    def _is_reparse_path(path: Path) -> bool:
+        """\u8bc6\u522b\u7b26\u53f7\u94fe\u63a5\u548c Windows junction\uff0c\u786e\u4fdd\u6839\u8def\u5f84\u4e0e\u5b50\u9879\u4f7f\u7528\u4e00\u81f4\u89c4\u5219\u3002"""
+
+        if path.is_symlink():
+            return True
+        if os.name != "nt":
+            return False
+        try:
+            return bool(
+                os.lstat(_filesystem_path(path)).st_file_attributes & _REPARSE_POINT_ATTRIBUTE
+            )
+        except OSError:
+            return False
 
     @staticmethod
     def _is_reparse_point(entry: os.DirEntry[str]) -> bool:
