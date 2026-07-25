@@ -136,6 +136,8 @@ def _compare_payload(
         "generated_at": utc_now(),
         "left": left_identity,
         "right": right_identity,
+        "left_volume": left.get("volume"),
+        "right_volume": right.get("volume"),
         "statistics": statistics,
         "directories": _merge_directories(left, right),
         "entries": entries,

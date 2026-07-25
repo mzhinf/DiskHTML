@@ -47,6 +47,9 @@ class UiTests(TestCase):
         )
         self.assertTrue(window._run_panel.isHidden())
         self.assertTrue(window._result_panel.isHidden())
+        self.assertEqual((window.width(), window.height()), (900, 650))
+        self.assertEqual(window.minimumSize(), window.maximumSize())
+        self.assertTrue(all(not tabs.tabIcon(index).isNull() for index in range(tabs.count())))
         window.close()
 
     def test_invalid_compare_inputs_show_inline_errors(self) -> None:
@@ -71,6 +74,7 @@ class UiTests(TestCase):
             window._snapshot_source.setText(str(source))
             output = root / f"documents_{date.today():%y-%m-%d}.html"
             self.assertEqual(window._snapshot_output.text(), str(output))
+            self.assertNotIn("documents-", window._snapshot_output.text())
             self.assertEqual(
                 sqlite_snapshot_path(output).name, f"documents_{date.today():%y-%m-%d}.sqlite3"
             )

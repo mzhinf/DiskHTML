@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QProgressBar,
     QPushButton,
+    QStyle,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -220,7 +221,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(ui_text.WINDOW_TITLE)
-        self.resize(860, 590)
+        self.setFixedSize(900, 650)
         self._scan_config = ScanConfig()
         self._compare_archive_directory = ""
         self._last_output: Path | None = None
@@ -235,9 +236,23 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(28, 18, 28, 16)
         layout.setSpacing(10)
         self._tabs = QTabWidget(content)
-        self._tabs.addTab(self._build_snapshot_page(), ui_text.TAB_SNAPSHOT)
-        self._tabs.addTab(self._build_compare_page(), ui_text.TAB_COMPARE)
-        self._tabs.addTab(self._build_sqlite_page(), ui_text.TAB_SQLITE)
+        self._tabs.setDocumentMode(True)
+        self._tabs.tabBar().setExpanding(True)
+        self._tabs.addTab(
+            self._build_snapshot_page(),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon),
+            ui_text.TAB_SNAPSHOT,
+        )
+        self._tabs.addTab(
+            self._build_compare_page(),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            ui_text.TAB_COMPARE,
+        )
+        self._tabs.addTab(
+            self._build_sqlite_page(),
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon),
+            ui_text.TAB_SQLITE,
+        )
         layout.addWidget(self._tabs)
         self._run_panel = self._build_run_panel(content)
         layout.addWidget(self._run_panel)
@@ -245,9 +260,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._result_panel)
         self.setCentralWidget(content)
         self.setStyleSheet(
-            "QTabWidget::pane{border:1px solid #d7dce1;border-top:0;}"
-            "QTabBar::tab{padding:10px 22px;font-size:14px;}"
-            "QTabBar::tab:selected{border-bottom:3px solid #126ac5;color:#126ac5;}"
+            "QTabWidget::pane{border:1px solid #c8d0d8;top:-1px;background:white;}"
+            "QTabBar{qproperty-drawBase:0;}"
+            "QTabBar::tab{min-height:24px;padding:11px 18px;margin-right:3px;"
+            "border:1px solid #c8d0d8;border-bottom:0;border-radius:5px 5px 0 0;"
+            "background:#edf1f5;color:#3f4b56;font-size:14px;}"
+            "QTabBar::tab:hover:!selected{background:#dfe9f3;color:#114a78;}"
+            "QTabBar::tab:selected{background:#126ac5;color:white;border-color:#126ac5;"
+            "font-weight:600;}"
             "QLineEdit{min-height:32px;border:1px solid #aeb8c2;border-radius:4px;padding:4px 8px;}"
             "QPushButton{min-height:32px;padding:4px 14px;}"
             "QPushButton#primary{background:#126ac5;color:white;border:0;border-radius:4px;font-weight:600;padding:7px 20px;}"
