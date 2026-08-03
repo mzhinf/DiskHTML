@@ -80,7 +80,8 @@ class ReleaseLicenseTests(TestCase):
             components = self.module.discover_components(package)
             component = next(item for item in components if item.name == "Tcl/Tk Runtime")
             self.assertEqual("8.6.12", component.version)
-            self.assertEqual(license_file, component.license_source)
+            self.assertIsNotNone(component.license_source)
+            self.assertTrue(component.license_source.samefile(license_file))
             self.assertTrue(component.is_resolved)
 
     def test_residual_qt_runtime_blocks_release(self) -> None:
