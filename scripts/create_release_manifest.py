@@ -8,6 +8,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+try:
+    from project_metadata import read_project_version
+except ModuleNotFoundError:
+    from scripts.project_metadata import read_project_version
+
 
 def _sha256(path: Path) -> str:
     """以有界读取计算单个文件的 SHA256。"""
@@ -50,11 +55,14 @@ def main(argv: list[str] | None = None) -> int:
     if output.exists():
         raise FileExistsError(f"发布清单已存在：{output}")
 
+    project_root = Path(__file__).resolve().parents[1]
+    project_version = read_project_version(project_root)
     file_count, package_bytes = _package_size(package)
     manifest = {
         "format_version": 1,
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "package_name": package.name,
+        "product_version": project_version,
         "package_file_count": file_count,
         "package_bytes": package_bytes,
         "executable": {

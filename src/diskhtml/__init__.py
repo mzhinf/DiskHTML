@@ -1,3 +1,5 @@
 """目录快照与文件 Hash 比对工具的核心包。"""
 
-__version__ = "0.1.0"
+from .version import __version__
+
+__all__ = ["__version__"]

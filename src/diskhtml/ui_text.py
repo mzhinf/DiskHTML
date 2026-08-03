@@ -9,7 +9,7 @@ _LANGUAGE = _DEFAULT_LANGUAGE
 
 _TRANSLATIONS: dict[str, dict[str, str]] = {
     "zh-CN": {
-        "WINDOW_TITLE": "DiskHTML - HTML 快照生成器",
+        "WINDOW_TITLE": "DiskHTML",
         "READY": "就绪",
         "LANGUAGE": "语言",
         "LANGUAGE_CHINESE": "中文",

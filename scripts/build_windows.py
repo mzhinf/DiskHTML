@@ -12,8 +12,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 try:
+    from project_metadata import read_project_version, write_windows_version_resource
     from release_licenses import build_license_bundle
 except ModuleNotFoundError:
+    from scripts.project_metadata import read_project_version, write_windows_version_resource
     from scripts.release_licenses import build_license_bundle
 
 
@@ -69,6 +71,7 @@ def build_windows(project_root: Path, *, clean: bool = False) -> tuple[Path, Pat
     executable_icon = assets / "folder-tree.ico"
     legacy_single_file = dist / "DiskHTML.exe"
     release_archive = build_root / "release" / "DiskHTML-win-x64.zip"
+    project_version = read_project_version(root)
 
     if not python.is_file():
         raise FileNotFoundError(f"Project virtual environment was not found: {python}")
@@ -78,6 +81,9 @@ def build_windows(project_root: Path, *, clean: bool = False) -> tuple[Path, Pat
     for generated in (package, release_archive, legacy_single_file):
         _remove_generated(generated, build_root)
 
+    version_resource = write_windows_version_resource(
+        build_root / "DiskHTML-version-info.txt", project_version
+    )
     command = [
         str(python),
         "-m",
@@ -90,8 +96,12 @@ def build_windows(project_root: Path, *, clean: bool = False) -> tuple[Path, Pat
         "DiskHTML",
         "--icon",
         str(executable_icon),
+        "--version-file",
+        str(version_resource),
         "--add-data",
         f"{assets}{os.pathsep}diskhtml/assets",
+        "--add-data",
+        f"{root / 'pyproject.toml'}{os.pathsep}.",
         "--paths",
         str(root / "src"),
         "--distpath",

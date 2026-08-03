@@ -17,6 +17,7 @@ DiskHTML 包含两个明确分离的界面：
 | `src/diskhtml/__main__.py` | `python -m diskhtml` 的高级 CLI 入口 | `cli` |
 | `src/diskhtml/ui.py` | 基于 `tkinter/ttk` 的三任务桌面界面、字段校验、后台线程、运行状态与中英文切换 | Python 标准库、`ui_text`、`html_archive`、`scanner`、`config` |
 | `src/diskhtml/ui_text.py` | 桌面界面中英文文案、当前语言状态与兼容常量访问 | `ui` |
+| `src/diskhtml/version.py` | 从唯一产品版本源或安装元数据读取运行时版本 | `__init__`、UI、CLI、HTML 服务 |
 | `src/diskhtml/exe_cli.py` | EXE 的 `snapshot`、`compare-source`、`render-sqlite` 命令 | `html_archive`、`config` |
 | `src/diskhtml/cli.py` | 高级 SQLite 项目、恢复、校验和兼容导出命令 | `scanner`、`compare`、`database`、`report` |
 | `src/diskhtml/html_archive.py` | 快照、SQLite 重渲染和“快照目录对本机目录”的应用服务 | `scanner`、`database`、`compare`、`archive_ui` |
@@ -31,7 +32,8 @@ DiskHTML 包含两个明确分离的界面：
 | `src/diskhtml/report/compare_exporter.py` | 高级比较结果导出 | `cli` |
 | `src/diskhtml/logging_config.py` | 文本和结构化 JSON 日志 | `cli` |
 | `src/diskhtml/util.py` | 时间、路径键和显示格式等底层工具 | 数据库、扫描、报告 |
-| `scripts/build_windows.py` | 无 PowerShell 依赖的 PyInstaller onedir 构建与 ZIP 打包 | 发布人员、CI |
+| `scripts/project_metadata.py` | 读取 `pyproject.toml` 产品版本并生成 Windows EXE 版本资源 | 构建、发布验证、发布清单 |
+| `scripts/build_windows.py` | 无 PowerShell 依赖的 PyInstaller onedir 构建、版本资源与 ZIP 打包 | 发布人员、CI |
 | `scripts/build_windows.ps1` | 可选 PowerShell 薄包装，仅转发到 Python 构建器 | Windows 手工构建 |
 | `scripts/verify_release.py` | 解压 ZIP，在隔离目录运行 EXE 并生成中文 HTML/SQLite | 发布人员、CI |
 | `scripts/create_release_manifest.py` | 为目录式发布包生成文件 SHA-256 清单 | 发布流程 |
@@ -56,6 +58,7 @@ DiskHTML 包含两个明确分离的界面：
 | 比对状态 | `MATCH` 相同、`CHANGED` 内容或元数据不同、`ADDED` 本机新增、`MISSING` 基准存在但本机缺失、`ERROR` 无法可靠判断 |
 | 路径键 | 保存原始相对路径与规范化 `path_key`；统一分隔符并 Unicode casefold |
 | Hash | SHA-256 始终计算；SHA-512 仅为可选附加摘要 |
+| 产品版本 | 唯一来源为 `pyproject.toml` 的 `project.version`；HTML 使用 `generator` 记录生成版本，EXE 写入 Windows 文件版本资源 |
 | EXE 发布 | PyInstaller `onedir`；发布 ZIP 内只有完整 `DiskHTML/` 顶层目录；不能单独复制 EXE |
 | PowerShell | 不参与构建核心；运行时仅用于补充物理磁盘型号、序列号和分区，失败时降级记录 |
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from diskhtml import html_archive
+from diskhtml import __version__, html_archive
 from diskhtml.config import ScanConfig
 from diskhtml.html_archive import (
     compare_html_archives,
@@ -47,11 +47,20 @@ class HtmlArchiveTests(TestCase):
             comparison_exists = comparison.is_file()
 
         self.assertEqual(payload["kind"], "scan")
+        self.assertEqual(payload["generator"], {"name": "DiskHTML", "version": __version__})
         self.assertIsInstance(payload["volume"], dict)
         self.assertTrue(
             {"disk_model", "disk_serial", "volume_guid", "total_bytes"} <= set(payload["volume"])
         )
         self.assertEqual(payload["statistics"]["total_files"], 3)
+        self.assertIn('id="report-title"', archive_text)
+        self.assertIn('id="report-version"', archive_text)
+        self.assertIn(
+            f'id="report-version" class="report-version">DiskHTML v{__version__}</span>'
+            '<span id="report-name"> - ',
+            archive_text,
+        )
+        self.assertNotIn('id="generator-version"', archive_text)
         self.assertIn('id="tree"', archive_text)
         self.assertIn("renderTree()", archive_text)
         self.assertIn("SHA-256", archive_text)

@@ -46,7 +46,7 @@ pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 .\.venv\Scripts\python.exe .\scripts\verify_release.py .\build\release\DiskHTML-win-x64.zip
 ~~~
 
-发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe` 和 `_internal\python312.dll`，运行 `--version`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
+发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe` 和 `_internal\python312.dll`，校验内嵌 `pyproject.toml` 的版本，运行 `--version`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
 
 ## 人工验收
 

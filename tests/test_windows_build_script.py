@@ -34,6 +34,19 @@ class WindowsBuildScriptTests(TestCase):
         self.assertNotIn("PySide6", script)
         self.assertNotIn("QSvgRenderer", script)
 
+    def test_version_resource_is_derived_from_project_metadata(self) -> None:
+        """构建版本资源必须与唯一项目版本源保持一致。"""
+
+        project_version = self.builder["read_project_version"](self.project_root)
+        with tempfile.TemporaryDirectory() as temporary:
+            resource = self.builder["write_windows_version_resource"](
+                Path(temporary) / "version-info.txt", project_version
+            )
+            content = resource.read_text(encoding="utf-8")
+        self.assertEqual("1.0.0", project_version)
+        self.assertIn("FileVersion', '1.0.0'", content)
+        self.assertIn("filevers=(1, 0, 0, 0)", content)
+
     def test_prebuilt_icon_assets_are_available(self) -> None:
         """SVG 源文件及 Tk/Windows 使用的 PNG、ICO 派生资源必须完整。"""
 

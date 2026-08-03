@@ -36,6 +36,7 @@ class ReleaseManifestScriptTests(TestCase):
             manifest = json.loads(output.read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["package_name"], "DiskHTML")
+        self.assertEqual(manifest["product_version"], "1.0.0")
         self.assertEqual(manifest["package_file_count"], 2)
         self.assertEqual(manifest["package_bytes"], len(payload) + len(b"runtime"))
         self.assertEqual(

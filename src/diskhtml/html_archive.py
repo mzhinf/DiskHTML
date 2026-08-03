@@ -19,6 +19,7 @@ from .database import Database
 from .models import CompareStatus, ScanProgress
 from .scanner import ScanController, Scanner
 from .util import utc_now
+from .version import __version__
 
 _ARCHIVE_FORMAT_VERSION = 1
 _ARCHIVE_DATA_ID = "diskhtml-archive-data"
@@ -131,6 +132,7 @@ def _compare_payload(
     return {
         "format_version": _ARCHIVE_FORMAT_VERSION,
         "kind": "compare",
+        "generator": _generator_metadata(),
         "generated_at": utc_now(),
         "left": left_identity,
         "right": right_identity,
@@ -260,6 +262,7 @@ def _scan_payload(database: Database, scan_id: str) -> dict[str, Any]:
     return {
         "format_version": _ARCHIVE_FORMAT_VERSION,
         "kind": "scan",
+        "generator": _generator_metadata(),
         "generated_at": utc_now(),
         "scan": _row_to_dict(scan),
         "volume": _row_to_dict(database.get_volume(scan_id)),
@@ -267,6 +270,22 @@ def _scan_payload(database: Database, scan_id: str) -> dict[str, Any]:
         "directories": [_row_to_dict(row) for row in database.iter_directories(scan_id)],
         "files": [_row_to_dict(row) for row in database.iter_files(scan_id)],
     }
+
+
+def _generator_metadata() -> dict[str, str]:
+    """返回写入 HTML 的生成器名称与产品版本。"""
+
+    return {"name": "DiskHTML", "version": __version__}
+
+
+def _generator_label(payload: dict[str, Any]) -> str:
+    """生成页面头部的版本标识，并兼容早期不含生成器字段的快照。"""
+
+    generator = payload.get("generator")
+    if isinstance(generator, dict):
+        version = str(generator.get("version") or "")
+        return f"v{version}" if version else ""
+    return ""
 
 
 def _snapshot_identity(payload: dict[str, Any], path: Path | str) -> dict[str, Any]:
@@ -378,8 +397,9 @@ def _scan_document(payload: dict[str, Any]) -> str:
     """生成包含嵌入数据的离线快照浏览页面。"""
 
     return page_header(
-        f"DiskHTML - {payload['scan']['source_path']}",
+        str(payload["scan"]["source_path"]),
         "文件系统快照，保留 SHA-256 和目录导航。",
+        _generator_label(payload),
     ) + tree_document(payload, _initial_table_rows(payload))
 
 
@@ -387,8 +407,9 @@ def _compare_document(payload: dict[str, Any]) -> str:
     """生成与快照浏览页一致、额外显示状态列的比较报告。"""
 
     return page_header(
-        "DiskHTML 快照比较",
+        "快照比较",
         "状态列显示当前目录与快照目录的比较结果。",
+        _generator_label(payload),
     ) + tree_document(payload, _initial_table_rows(payload))
 
 

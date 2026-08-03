@@ -10,7 +10,7 @@ from time import monotonic
 from unittest import TestCase
 from unittest.mock import patch
 
-from diskhtml import ui_text
+from diskhtml import __version__, ui_text
 from diskhtml.config import ScanConfig
 from diskhtml.html_archive import create_html_snapshot, sqlite_snapshot_path
 from diskhtml.models import ScanProgress
@@ -60,7 +60,7 @@ class UiTests(TestCase):
         self.window._change_language()
 
         self.assertEqual("en", ui_text.current_language())
-        self.assertEqual("DiskHTML - HTML Snapshot Generator", self.window.title())
+        self.assertEqual(f"DiskHTML - HTML Snapshot Generator v{__version__}", self.window.title())
         self.assertEqual("Create Snapshot", self.window._tabs.tab(0, "text"))
         self.assertEqual(1, self.window._tabs.index(self.window._tabs.select()))
         self.assertEqual("D:/source", self.window._snapshot_source_var.get())

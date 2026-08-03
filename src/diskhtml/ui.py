@@ -23,6 +23,7 @@ from .html_archive import (
 )
 from .models import ScanProgress
 from .scanner import ScanController
+from .version import __version__
 
 TaskEvent = tuple[str, object]
 
@@ -240,12 +241,18 @@ class ArchiveDirectoryDialog(tk.Toplevel):
         return self._accepted
 
 
+def _window_title() -> str:
+    """返回包含当前产品版本的桌面窗口标题。"""
+
+    return f"{ui_text.WINDOW_TITLE} v{__version__}"
+
+
 class MainWindow(tk.Tk):
     """只负责配置并执行 HTML 生成任务的主窗口。"""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title(ui_text.WINDOW_TITLE)
+        self.title(_window_title())
         self.geometry("920x700")
         self.resizable(False, False)
         self.minsize(920, 700)
@@ -357,7 +364,7 @@ class MainWindow(tk.Tk):
             return
         values = self._capture_form_values()
         ui_text.set_language(language)
-        self.title(ui_text.WINDOW_TITLE)
+        self.title(_window_title())
         self._setup_central_content()
         self._restore_form_values(values)
         self._refresh_language_selector()
