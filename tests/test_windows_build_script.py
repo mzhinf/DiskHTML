@@ -75,7 +75,12 @@ class WindowsBuildScriptTests(TestCase):
         workflow = (self.project_root / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("python -m venv .venv", workflow)
+        self.assertIn(
+            "DISKHTML_RUNTIME_SHA256: d785d2e901a8194dcdb8c23c2b37a46ed84fdc04e87398dc5b832644330de71e",
+            workflow,
+        )
+        self.assertIn("BUILD mismatch", workflow)
+        self.assertIn('"%DISKHTML_PYTHON%" -m venv .venv', workflow)
         self.assertIn(".venv\\Scripts\\python.exe scripts\\build_windows.py --clean", workflow)
         self.assertIn(".venv\\Scripts\\python.exe scripts\\verify_release.py", workflow)
 

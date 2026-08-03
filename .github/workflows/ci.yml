@@ -1,4 +1,4 @@
-# Validate first-party code and the complete portable Windows release package.
+# 校验一方代码与完整的 Windows 便携发布包。
 name: Windows CI
 
 on:
@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONUTF8: "1"
+      DISKHTML_RUNTIME_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.12.13%2B20260414-x86_64-pc-windows-msvc-install_only_stripped.tar.gz
+      DISKHTML_RUNTIME_SHA256: d785d2e901a8194dcdb8c23c2b37a46ed84fdc04e87398dc5b832644330de71e
     defaults:
       run:
         shell: cmd
@@ -23,14 +25,31 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
+      - name: Download reviewed Python runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'diskhtml-cpython-3.12.13-20260414.tar.gz'
+          $runtimeRoot = Join-Path $env:RUNNER_TEMP 'diskhtml-cpython-3.12.13-20260414'
+          Invoke-WebRequest -Uri $env:DISKHTML_RUNTIME_URL -OutFile $archive
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($actualHash -ne $env:DISKHTML_RUNTIME_SHA256) {
+            throw "Python runtime SHA-256 mismatch: $actualHash"
+          }
+          New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+          tar -xzf $archive -C $runtimeRoot
+          $python = Join-Path $runtimeRoot 'python\python.exe'
+          if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            throw "Reviewed Python runtime is missing python.exe: $python"
+          }
+          $buildId = (& $python -c "from pathlib import Path; import sys; print((Path(sys.base_prefix) / 'BUILD').read_text(encoding='utf-8').strip())")
+          if ($buildId -ne '20260414') {
+            throw "Reviewed Python runtime BUILD mismatch: $buildId"
+          }
+          "DISKHTML_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Create project virtual environment
-        run: python -m venv .venv
+        run: "%DISKHTML_PYTHON%" -m venv .venv
 
       - name: Install development and build dependencies
         run: .venv\Scripts\python.exe -m pip install -e ".[dev,build]"
