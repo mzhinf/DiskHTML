@@ -21,3 +21,13 @@ tests/tmp*/
 .env
 .env.*
 !.env.example
+# 本地生成的报告与日志
+*.html
+*.sqlite
+*.log
+*.jsonl
+
+# 本地任务规划记录（正式结论写入 docs）
+task_plan.md
+findings.md
+progress.md

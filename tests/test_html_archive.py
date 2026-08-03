@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from diskhtml import html_archive
 from diskhtml.config import ScanConfig
 from diskhtml.html_archive import (
     compare_html_archives,
@@ -88,6 +89,11 @@ class HtmlArchiveTests(TestCase):
         self.assertIn('id="columns"', archive_text)
         self.assertIn("makeSortButton", archive_text)
         self.assertIn('id="details-toggle"', archive_text)
+        self.assertIn('id="language-toggle"', archive_text)
+        self.assertIn("const messages = {", archive_text)
+        self.assertIn("function applyLanguage(next)", archive_text)
+        self.assertIn("Switch to Chinese", archive_text)
+        self.assertIn("statusLabel(row.status)", comparison_text)
         self.assertIn('id="export-view"', archive_text)
         self.assertIn("appendHighlighted", archive_text)
         self.assertIn("matchesSearch", archive_text)
@@ -166,6 +172,40 @@ class HtmlArchiveTests(TestCase):
         self.assertIn("<td>ADDED</td>", text)
         self.assertIn("<td>ADDED</td>", text)
         self.assertNotIn("outside.txt", text)
+
+    def test_comparison_fallback_rows_use_available_side_metadata(self) -> None:
+        """静态回退表格应为新增和缺失条目选择存在一侧的详情。"""
+
+        rows = html_archive._initial_table_rows(
+            {
+                "kind": "compare",
+                "entries": [
+                    {
+                        "relative_path": "only-old.txt",
+                        "old_size_bytes": 2048,
+                        "old_modified_time": "旧修改时间",
+                        "old_created_time": "旧创建时间",
+                        "old_sha256": "OLD",
+                        "new_size_bytes": None,
+                        "status": "MISSING",
+                    },
+                    {
+                        "relative_path": "only-new.txt",
+                        "old_size_bytes": None,
+                        "new_size_bytes": 3072,
+                        "new_modified_time": "新修改时间",
+                        "new_created_time": "新创建时间",
+                        "new_sha256": "NEW",
+                        "status": "ADDED",
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("<td>only-old.txt</td><td>2.0 KB</td><td>旧修改时间</td>", rows)
+        self.assertIn("<td>OLD</td><td>MISSING</td>", rows)
+        self.assertIn("<td>only-new.txt</td><td>3.0 KB</td><td>新修改时间</td>", rows)
+        self.assertIn("<td>NEW</td><td>ADDED</td>", rows)
 
     def test_backup_rejects_non_html_or_existing_output(self) -> None:
         """用户交付物必须是新建的 .html 文件，避免覆盖既有快照。"""

@@ -7,7 +7,7 @@ import json
 import os
 from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 from threading import Event
@@ -22,6 +22,16 @@ from .util import normalized_path_key, relative_display_path, timestamp_to_utc, 
 # 保留早期公开名称，后续调用方可以平滑迁移到 ScanConfig。
 ScanOptions = ScanConfig
 _REPARSE_POINT_ATTRIBUTE = 0x400
+
+
+@dataclass
+class _ScanCounters:
+    """保存单次扫描期间的进度计数，避免在多个辅助函数间传递长参数列表。"""
+
+    seen: int = 0
+    completed: int = 0
+    bytes_hashed: int = 0
+    known_bytes: int = 0
 
 
 def _filesystem_path(path: Path) -> str:
@@ -132,26 +142,44 @@ class Scanner:
         """执行扫描主循环；当前线程是唯一的 SQLite 写入者。"""
 
         started = monotonic()
-        if not source.exists():
-            self.database.record_error(
-                scan_id, None, "SOURCE_NOT_FOUND", f"扫描目标不存在：{source}"
+        self._validate_source(scan_id, source, options)
+        root = self._begin_scan(scan_id, source, options)
+        counters = _ScanCounters()
+        try:
+            pending, cancelled = self._hash_paths(
+                scan_id, source, root, options, controller, counters, started
             )
-            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+            if cancelled:
+                self._store_finished_futures(scan_id, pending, counters, started)
+            self._complete_scan(scan_id, counters, cancelled)
+        except Exception:
+            self._mark_scan_failed(scan_id)
+            raise
+
+    def _validate_source(self, scan_id: str, source: Path, options: ScanOptions) -> None:
+        """在开始扫描前记录并拒绝不存在或不允许的源路径。"""
+
+        if not source.exists():
+            self._fail_scan(scan_id, "SOURCE_NOT_FOUND", f"扫描目标不存在：{source}")
             raise FileNotFoundError(f"扫描目标不存在：{source}")
         if source.is_symlink() and not options.follow_links:
-            self.database.record_error(
-                scan_id, None, "REPARSE_POINT", "默认不跟随符号链接或 Windows 重解析点。"
-            )
-            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+            message = "默认不跟随符号链接或 Windows 重解析点。"
+            self._fail_scan(scan_id, "REPARSE_POINT", message)
             raise ValueError("扫描目标不能是符号链接或重解析点")
+
+    def _fail_scan(self, scan_id: str, error_code: str, message: str) -> None:
+        """保存无法开始的扫描错误并转换任务状态。"""
+
+        self.database.record_error(scan_id, None, error_code, message)
+        self.database.set_scan_status(scan_id, ScanStatus.FAILED)
+
+    def _begin_scan(self, scan_id: str, source: Path, options: ScanOptions) -> Path:
+        """保存扫描开始状态、卷信息和根目录记录，并返回相对路径根。"""
 
         self.database.set_scan_status(scan_id, ScanStatus.SCANNING)
         self.database.record_volume(scan_id, collect_volume_info(source))
         root = source.parent if source.is_file() else source
-        try:
-            root_stat = os.stat(_filesystem_path(root), follow_symlinks=options.follow_links)
-        except OSError:
-            root_stat = None
+        root_stat = self._stat_path(root, options)
         self.database.record_directory(
             scan_id,
             "",
@@ -160,81 +188,158 @@ class Scanner:
             created_time=timestamp_to_utc(root_stat.st_ctime_ns) if root_stat else None,
             modified_time=timestamp_to_utc(root_stat.st_mtime_ns) if root_stat else None,
         )
-        seen = 0
-        completed = 0
-        bytes_hashed = 0
-        known_bytes = 0
-        pending: set[Future[dict[str, object]]] = set()
-        cancelled = False
+        return root
+
+    @staticmethod
+    def _stat_path(path: Path, options: ScanOptions) -> os.stat_result | None:
+        """读取路径元数据；访问失败时让后续 Hash 结果负责记录具体错误。"""
+
         try:
-            with ThreadPoolExecutor(
-                max_workers=max(1, options.workers), thread_name_prefix="hash"
-            ) as executor:
-                for path in self._iter_paths(source, root, options, scan_id):
-                    self._wait_at_file_boundary(scan_id, controller)
-                    if controller.cancelled:
-                        cancelled = True
-                        break
-                    seen += 1
-                    relative_path = relative_display_path(path, root)
-                    path_key = normalized_path_key(relative_path)
-                    try:
-                        stat = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
-                    except OSError:
-                        stat = None
-                    if stat is not None:
-                        known_bytes += stat.st_size
-                    existing = self.database.get_file(scan_id, path_key)
-                    if stat is not None and self._is_reusable(existing, stat):
-                        completed += 1
-                        bytes_hashed += stat.st_size
-                        self._notify(
-                            scan_id,
-                            seen,
-                            completed,
-                            bytes_hashed,
-                            known_bytes,
-                            relative_path,
-                            started,
-                        )
-                        continue
-                    pending.add(executor.submit(self._hash_file, path, root, options))
-                    if len(pending) >= max(1, options.queue_size):
-                        done, pending = wait(pending, return_when=FIRST_COMPLETED)
-                        completed, bytes_hashed = self._store_done(
-                            scan_id, done, seen, completed, bytes_hashed, known_bytes, started
-                        )
+            return os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
+        except OSError:
+            return None
 
-                while pending and not cancelled:
-                    self._wait_at_file_boundary(scan_id, controller)
-                    if controller.cancelled:
-                        cancelled = True
-                        break
-                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
-                    completed, bytes_hashed = self._store_done(
-                        scan_id, done, seen, completed, bytes_hashed, known_bytes, started
-                    )
+    def _hash_paths(
+        self,
+        scan_id: str,
+        source: Path,
+        root: Path,
+        options: ScanOptions,
+        controller: ScanController,
+        counters: _ScanCounters,
+        started: float,
+    ) -> tuple[set[Future[dict[str, object]]], bool]:
+        """提交文件 Hash，并在取消前按有界队列写入已完成结果。"""
 
-                if cancelled:
-                    for future in pending:
-                        future.cancel()
-
+        pending: set[Future[dict[str, object]]] = set()
+        with ThreadPoolExecutor(
+            max_workers=max(1, options.workers), thread_name_prefix="hash"
+        ) as executor:
+            cancelled = self._queue_paths(
+                scan_id, source, root, options, controller, executor, pending, counters, started
+            )
+            if not cancelled:
+                cancelled = self._drain_pending(scan_id, controller, pending, counters, started)
             if cancelled:
-                finished = {future for future in pending if not future.cancelled()}
-                if finished:
-                    completed, bytes_hashed = self._store_done(
-                        scan_id, finished, seen, completed, bytes_hashed, known_bytes, started
-                    )
-            self.database.update_progress(scan_id, seen, completed, bytes_hashed)
-            if cancelled:
-                self.database.set_scan_status(scan_id, ScanStatus.CANCELLED)
-            else:
-                self.database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
-        except Exception:
-            job = self.database.get_scan(scan_id)
-            if job is not None and job["status"] != ScanStatus.COMPLETED:
-                self.database.set_scan_status(scan_id, ScanStatus.FAILED)
-            raise
+                for future in pending:
+                    future.cancel()
+        return pending, cancelled
+
+    def _queue_paths(
+        self,
+        scan_id: str,
+        source: Path,
+        root: Path,
+        options: ScanOptions,
+        controller: ScanController,
+        executor: ThreadPoolExecutor,
+        pending: set[Future[dict[str, object]]],
+        counters: _ScanCounters,
+        started: float,
+    ) -> bool:
+        """遍历文件并在队列达到上限时提交至少一项完成结果。"""
+
+        for path in self._iter_paths(source, root, options, scan_id):
+            if self._cancelled_at_boundary(scan_id, controller):
+                return True
+            self._queue_path(scan_id, path, root, options, executor, pending, counters, started)
+        return False
+
+    def _queue_path(
+        self,
+        scan_id: str,
+        path: Path,
+        root: Path,
+        options: ScanOptions,
+        executor: ThreadPoolExecutor,
+        pending: set[Future[dict[str, object]]],
+        counters: _ScanCounters,
+        started: float,
+    ) -> None:
+        """处理单个文件的恢复复用或 Hash 提交。"""
+
+        counters.seen += 1
+        relative_path = relative_display_path(path, root)
+        path_key = normalized_path_key(relative_path)
+        stat = self._stat_path(path, options)
+        if stat is not None:
+            counters.known_bytes += stat.st_size
+        existing = self.database.get_file(scan_id, path_key)
+        if stat is not None and self._is_reusable(existing, stat):
+            counters.completed += 1
+            counters.bytes_hashed += stat.st_size
+            self._notify(scan_id, counters, relative_path, started)
+            return
+        pending.add(executor.submit(self._hash_file, path, root, options))
+        if len(pending) >= max(1, options.queue_size):
+            self._store_next_futures(scan_id, pending, counters, started)
+
+    def _drain_pending(
+        self,
+        scan_id: str,
+        controller: ScanController,
+        pending: set[Future[dict[str, object]]],
+        counters: _ScanCounters,
+        started: float,
+    ) -> bool:
+        """在未取消时写入所有挂起结果；返回是否在文件边界收到取消请求。"""
+
+        while pending:
+            if self._cancelled_at_boundary(scan_id, controller):
+                return True
+            self._store_next_futures(scan_id, pending, counters, started)
+        return False
+
+    def _cancelled_at_boundary(self, scan_id: str, controller: ScanController) -> bool:
+        """处理暂停状态，并在下一个文件边界报告是否已取消。"""
+
+        self._wait_at_file_boundary(scan_id, controller)
+        return controller.cancelled
+
+    def _store_next_futures(
+        self,
+        scan_id: str,
+        pending: set[Future[dict[str, object]]],
+        counters: _ScanCounters,
+        started: float,
+    ) -> None:
+        """等待至少一个 Future 完成，并原地更新尚未完成集合。"""
+
+        done, remaining = wait(pending, return_when=FIRST_COMPLETED)
+        pending.clear()
+        pending.update(remaining)
+        self._store_done(scan_id, done, counters, started)
+
+    def _store_finished_futures(
+        self,
+        scan_id: str,
+        pending: set[Future[dict[str, object]]],
+        counters: _ScanCounters,
+        started: float,
+    ) -> None:
+        """取消后仅写入线程池退出前已完成且未成功取消的结果。"""
+
+        finished = {future for future in pending if not future.cancelled()}
+        if finished:
+            self._store_done(scan_id, finished, counters, started)
+
+    def _complete_scan(self, scan_id: str, counters: _ScanCounters, cancelled: bool) -> None:
+        """写入最终进度，并以取消或完成状态冻结扫描。"""
+
+        self.database.update_progress(
+            scan_id, counters.seen, counters.completed, counters.bytes_hashed
+        )
+        if cancelled:
+            self.database.set_scan_status(scan_id, ScanStatus.CANCELLED)
+            return
+        self.database.set_scan_status(scan_id, ScanStatus.COMPLETED, completed=True)
+
+    def _mark_scan_failed(self, scan_id: str) -> None:
+        """仅把尚未完成的任务标记为失败，保留原始业务异常。"""
+
+        job = self.database.get_scan(scan_id)
+        if job is not None and job["status"] != ScanStatus.COMPLETED:
+            self.database.set_scan_status(scan_id, ScanStatus.FAILED)
 
     def _wait_at_file_boundary(self, scan_id: str, controller: ScanController) -> None:
         """持久化暂停状态，并在继续后恢复 SCANNING。"""
@@ -255,19 +360,16 @@ class Scanner:
         self,
         scan_id: str,
         done: set[Future[dict[str, object]]],
-        seen: int,
-        completed: int,
-        bytes_hashed: int,
-        known_bytes: int,
+        counters: _ScanCounters,
         started: float,
-    ) -> tuple[int, int]:
+    ) -> None:
         """由唯一写入线程提交完成的 Hash 结果。"""
 
         results = [future.result() for future in done if not future.cancelled()]
         for result in results:
-            completed += 1
+            counters.completed += 1
             if result["hash_status"] == HashStatus.OK:
-                bytes_hashed += int(result["size_bytes"] or 0)
+                counters.bytes_hashed += int(result["size_bytes"] or 0)
 
         if results:
             with self.database.batch() as batch:
@@ -280,19 +382,12 @@ class Scanner:
                             str(result.get("error_code") or "HASH_ERROR"),
                             str(result.get("error_message") or "文件 Hash 未完成。"),
                         )
-                batch.update_progress(scan_id, seen, completed, bytes_hashed)
+                batch.update_progress(
+                    scan_id, counters.seen, counters.completed, counters.bytes_hashed
+                )
 
         for result in results:
-            self._notify(
-                scan_id,
-                seen,
-                completed,
-                bytes_hashed,
-                known_bytes,
-                str(result["relative_path"]),
-                started,
-            )
-        return completed, bytes_hashed
+            self._notify(scan_id, counters, str(result["relative_path"]), started)
 
     def _iter_paths(
         self, source: Path, root: Path, options: ScanOptions, scan_id: str
@@ -528,31 +623,29 @@ class Scanner:
     def _notify(
         self,
         scan_id: str,
-        seen: int,
-        completed: int,
-        bytes_hashed: int,
-        known_bytes: int,
+        counters: _ScanCounters,
         current_path: str | None,
         started: float,
     ) -> None:
         """在存在回调时发送包含速率的进度快照。"""
 
-        if self.progress_callback:
-            elapsed = max(monotonic() - started, 0.001)
-            bytes_per_second = bytes_hashed / elapsed
-            estimated_remaining = (
-                max(known_bytes - bytes_hashed, 0) / bytes_per_second
-                if bytes_per_second > 0
-                else None
+        if not self.progress_callback:
+            return
+        elapsed = max(monotonic() - started, 0.001)
+        bytes_per_second = counters.bytes_hashed / elapsed
+        estimated_remaining = (
+            max(counters.known_bytes - counters.bytes_hashed, 0) / bytes_per_second
+            if bytes_per_second > 0
+            else None
+        )
+        self.progress_callback(
+            ScanProgress(
+                scan_id,
+                counters.seen,
+                counters.completed,
+                counters.bytes_hashed,
+                current_path,
+                bytes_per_second,
+                estimated_remaining,
             )
-            self.progress_callback(
-                ScanProgress(
-                    scan_id,
-                    seen,
-                    completed,
-                    bytes_hashed,
-                    current_path,
-                    bytes_per_second,
-                    estimated_remaining,
-                )
-            )
+        )

@@ -1,4 +1,4 @@
-"""源码文本编码回归测试。"""
+"""Source encoding and file-level description regression tests."""
 
 from __future__ import annotations
 
@@ -7,42 +7,84 @@ import re
 import unittest
 from pathlib import Path
 
-_SOURCE_ROOT = Path(__file__).parents[1] / "src" / "diskhtml"
+_PROJECT_ROOT = Path(__file__).parents[1]
+_SOURCE_ROOT = _PROJECT_ROOT / "src" / "diskhtml"
+_PYTHON_ROOTS = (_PROJECT_ROOT / "src", _PROJECT_ROOT / "scripts", _PROJECT_ROOT / "tests")
 _CORRUPTED_TEXT = re.compile(r"\?{3,}|\ufffd")
 
 
+def _python_files() -> list[Path]:
+    """Return every first-party Python source, maintenance script, and test file."""
+
+    return sorted(path for root in _PYTHON_ROOTS for path in root.rglob("*.py"))
+
+
 class SourceTextEncodingTests(unittest.TestCase):
-    """防止损坏的中文文本再次进入源码和构建产物。"""
+    """Prevent damaged text or undocumented code files from entering a release."""
 
     def test_python_sources_are_valid_utf8(self) -> None:
-        """所有 Python 源码都必须能够按 UTF-8 严格解码。"""
+        """Every first-party Python file must decode strictly as UTF-8."""
 
         failures: list[str] = []
-        for path in sorted(_SOURCE_ROOT.rglob("*.py")):
+        for path in _python_files():
             try:
                 path.read_text(encoding="utf-8", errors="strict")
             except UnicodeDecodeError as exc:
-                failures.append(f"{path.relative_to(_SOURCE_ROOT)}: {exc}")
+                failures.append(f"{path.relative_to(_PROJECT_ROOT)}: {exc}")
+
+        self.assertEqual([], failures)
+
+    def test_python_files_have_module_descriptions(self) -> None:
+        """Every first-party Python file must explain its purpose in a module docstring."""
+
+        failures: list[str] = []
+        for path in _python_files():
+            source = path.read_text(encoding="utf-8", errors="strict")
+            if not ast.get_docstring(ast.parse(source, filename=str(path))):
+                failures.append(str(path.relative_to(_PROJECT_ROOT)))
+
+        self.assertEqual([], failures)
+
+    def test_powershell_files_have_header_descriptions(self) -> None:
+        """Every first-party PowerShell file must start with a purpose comment."""
+
+        failures: list[str] = []
+        for path in sorted((_PROJECT_ROOT / "scripts").rglob("*.ps1")):
+            first_line = path.read_text(encoding="utf-8", errors="strict").splitlines()[0]
+            if not first_line.startswith("# "):
+                failures.append(str(path.relative_to(_PROJECT_ROOT)))
+
+        self.assertEqual([], failures)
+
+    def test_github_workflows_have_header_descriptions(self) -> None:
+        """Every first-party GitHub workflow must start with a purpose comment."""
+
+        failures: list[str] = []
+        workflow_root = _PROJECT_ROOT / ".github" / "workflows"
+        for path in sorted([*workflow_root.glob("*.yml"), *workflow_root.glob("*.yaml")]):
+            first_line = path.read_text(encoding="utf-8", errors="strict").splitlines()[0]
+            if not first_line.startswith("# "):
+                failures.append(str(path.relative_to(_PROJECT_ROOT)))
 
         self.assertEqual([], failures)
 
     def test_string_literals_do_not_contain_corruption_markers(self) -> None:
-        """字符串常量中不得出现连续问号或 Unicode 替换字符。"""
+        """String constants must not contain repeated question marks or replacement characters."""
 
         failures: list[str] = []
-        for path in sorted(_SOURCE_ROOT.rglob("*.py")):
+        for path in _python_files():
             source = path.read_text(encoding="utf-8", errors="strict")
             tree = ast.parse(source, filename=str(path))
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                     continue
                 if _CORRUPTED_TEXT.search(node.value):
-                    failures.append(f"{path.relative_to(_SOURCE_ROOT)}:{node.lineno}")
+                    failures.append(f"{path.relative_to(_PROJECT_ROOT)}:{node.lineno}")
 
         self.assertEqual([], failures)
 
     def test_readable_source_text_uses_direct_utf8(self) -> None:
-        """可读文本应直接使用 UTF-8，仅保留具有协议或安全语义的转义。"""
+        """Readable text uses UTF-8; only protocol or security escapes are allowed."""
 
         allowed = {
             "archive_ui.py": {"feff"},

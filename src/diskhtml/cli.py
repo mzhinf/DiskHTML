@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .compare import compare_scans, compare_sources
-from .config import ScanConfig, load_config
+from .config import AppConfig, ScanConfig, load_config
 from .database import Database
 from .html_archive import (
     compare_html_archives,
@@ -153,97 +153,127 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
-
     try:
         config = load_config(args.config)
         configure_logging(config.log_level, config.json_log)
-        if args.command == "snapshot":
-            output = create_html_snapshot(
-                args.source, args.output, _scan_options(config.scan, args)
-            )
-            print(f"HTML 快照已生成：{output}")
-            return 0
-        if args.command == "render-sqlite":
-            output = render_html_snapshot_from_sqlite(args.database, args.output)
-            print(f"HTML 快照已从 SQLite 生成：{output}")
-            return 0
-        if args.command == "compare-source":
-            output = compare_html_directory_to_source(
-                args.archive,
-                args.archived_directory,
-                args.source,
-                args.output,
-                _scan_options(config.scan, args),
-            )
-            print(f"HTML 目录比较报告已生成：{output}")
-            return 0
-        if args.command == "compare-html":
-            output = compare_html_archives(args.left, args.right, args.output)
-            print(f"HTML 比较报告已生成：{output}")
-            return 0
-        database = Database(args.database)
-        try:
-            if args.command == "init-db":
-                print(f"数据库已就绪：{args.database}")
-                return 0
-            if args.command == "check-db":
-                result = database.integrity_check()
-                print(f"数据库完整性检查：{result}")
-                return 0 if result == "ok" else 2
-            if args.command == "check-project":
-                problems = database.project_check()
-                if not problems:
-                    print("项目自校验：ok")
-                    return 0
-                print("项目自校验失败：")
-                for problem in problems:
-                    print(f"- {problem}")
-                return 2
-            if args.command == "scan":
-                scan_id = Scanner(database).start(args.source, _scan_options(config.scan, args))
-                print(f"扫描已完成：{scan_id}")
-                return 0
-            if args.command == "resume":
-                Scanner(database).resume(args.scan_id)
-                print(f"扫描已恢复并完成：{args.scan_id}")
-                return 0
-            if args.command == "status":
-                scans = [database.get_scan(args.scan_id)] if args.scan_id else database.iter_scans()
-                payload = [dict(scan) for scan in scans if scan is not None]
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-                return 0 if payload else 1
-            if args.command == "export":
-                output = (
-                    export_compare(database, args.task_id, args.output)
-                    if args.compare
-                    else export_scan(database, args.task_id, args.output)
-                )
-                print(f"报告已导出：{output}")
-                return 0
-            if args.command == "compare":
-                compare_id = compare_sources(
-                    database, str(args.left), str(args.right), _scan_options(config.scan, args)
-                )
-                print(f"比较已完成：{compare_id}")
-                return 0
-            if args.command == "verify":
-                current = Scanner(database).start(args.source, _scan_options(config.scan, args))
-                compare_id = compare_scans(database, args.scan_id, current)
-                print(f"复验已完成：{compare_id}")
-                return 0
-            if args.command == "import":
-                if args.database.resolve() == args.source.resolve():
-                    raise ValueError("导入源数据库不能与目标数据库相同")
-                with Database.open_existing(args.source) as source:
-                    source.connection.backup(database.connection)
-                print(f"项目数据库已导入：{args.source} -> {args.database}")
-                return 0
-            parser.error(f"未知命令：{args.command}")
-        finally:
-            database.close()
+        html_exit_code = _run_html_command(args, config)
+        if html_exit_code is not None:
+            return html_exit_code
+        return _run_database_command(args, config, parser)
     except (OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     return 2
+
+
+def _run_html_command(args: argparse.Namespace, config: AppConfig) -> int | None:
+    """执行不需要项目数据库的 HTML 快照、重渲染和比较命令。"""
+
+    if args.command == "snapshot":
+        output = create_html_snapshot(args.source, args.output, _scan_options(config.scan, args))
+        print(f"HTML 快照已生成：{output}")
+        return 0
+    if args.command == "render-sqlite":
+        output = render_html_snapshot_from_sqlite(args.database, args.output)
+        print(f"HTML 快照已从 SQLite 生成：{output}")
+        return 0
+    if args.command == "compare-source":
+        output = compare_html_directory_to_source(
+            args.archive,
+            args.archived_directory,
+            args.source,
+            args.output,
+            _scan_options(config.scan, args),
+        )
+        print(f"HTML 目录比较报告已生成：{output}")
+        return 0
+    if args.command == "compare-html":
+        output = compare_html_archives(args.left, args.right, args.output)
+        print(f"HTML 比较报告已生成：{output}")
+        return 0
+    return None
+
+
+def _run_database_command(
+    args: argparse.Namespace, config: AppConfig, parser: argparse.ArgumentParser
+) -> int:
+    """打开项目数据库并执行扫描、维护、导出或比较命令。"""
+
+    with Database(args.database) as database:
+        if args.command == "init-db":
+            print(f"数据库已就绪：{args.database}")
+            return 0
+        if args.command == "check-db":
+            result = database.integrity_check()
+            print(f"数据库完整性检查：{result}")
+            return 0 if result == "ok" else 2
+        if args.command == "check-project":
+            return _print_project_check(database)
+        if args.command == "scan":
+            scan_id = Scanner(database).start(args.source, _scan_options(config.scan, args))
+            print(f"扫描已完成：{scan_id}")
+            return 0
+        if args.command == "resume":
+            Scanner(database).resume(args.scan_id)
+            print(f"扫描已恢复并完成：{args.scan_id}")
+            return 0
+        if args.command == "status":
+            return _print_scan_status(database, args.scan_id)
+        if args.command == "export":
+            output = (
+                export_compare(database, args.task_id, args.output)
+                if args.compare
+                else export_scan(database, args.task_id, args.output)
+            )
+            print(f"报告已导出：{output}")
+            return 0
+        if args.command == "compare":
+            compare_id = compare_sources(
+                database, str(args.left), str(args.right), _scan_options(config.scan, args)
+            )
+            print(f"比较已完成：{compare_id}")
+            return 0
+        if args.command == "verify":
+            current = Scanner(database).start(args.source, _scan_options(config.scan, args))
+            compare_id = compare_scans(database, args.scan_id, current)
+            print(f"复验已完成：{compare_id}")
+            return 0
+        if args.command == "import":
+            _import_database(database, args.source, args.database)
+            print(f"项目数据库已导入：{args.source} -> {args.database}")
+            return 0
+    parser.error(f"未知命令：{args.command}")
+    return 2
+
+
+def _print_project_check(database: Database) -> int:
+    """输出项目自校验结果并返回对应退出码。"""
+
+    problems = database.project_check()
+    if not problems:
+        print("项目自校验：ok")
+        return 0
+    print("项目自校验失败：")
+    for problem in problems:
+        print(f"- {problem}")
+    return 2
+
+
+def _print_scan_status(database: Database, scan_id: str | None) -> int:
+    """输出指定扫描或全部扫描的稳定 JSON 状态。"""
+
+    scans = [database.get_scan(scan_id)] if scan_id else database.iter_scans()
+    payload = [dict(scan) for scan in scans if scan is not None]
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload else 1
+
+
+def _import_database(database: Database, source_path: Path, destination_path: Path) -> None:
+    """从另一项目数据库复制全部内容，拒绝源与目标为同一文件。"""
+
+    if destination_path.resolve() == source_path.resolve():
+        raise ValueError("导入源数据库不能与目标数据库相同")
+    with Database.open_existing(source_path) as source:
+        source.connection.backup(database.connection)
 
 
 def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:

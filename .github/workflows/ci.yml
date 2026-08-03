@@ -1,0 +1,63 @@
+# Validate first-party code and the complete portable Windows release package.
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create project virtual environment
+        run: python -m venv .venv
+
+      - name: Install development and build dependencies
+        run: .venv\Scripts\python.exe -m pip install -e ".[dev,build]"
+
+      - name: Check formatting
+        run: .venv\Scripts\python.exe -m ruff format --check src scripts tests
+
+      - name: Run static checks
+        run: .venv\Scripts\python.exe -m ruff check src scripts tests
+
+      - name: Run tests
+        run: .venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+
+      - name: Build portable Windows package
+        run: .venv\Scripts\python.exe scripts\build_windows.py --clean
+
+      - name: Verify extracted release package
+        run: .venv\Scripts\python.exe scripts\verify_release.py build\release\DiskHTML-win-x64.zip
+
+      - name: Create release manifest
+        run: .venv\Scripts\python.exe scripts\create_release_manifest.py build\dist\DiskHTML build\DiskHTML-release-manifest.json
+
+      - name: Upload verified package
+        uses: actions/upload-artifact@v6
+        with:
+          name: DiskHTML-win-x64
+          path: |
+            build/release/DiskHTML-win-x64.zip
+            build/DiskHTML-release-manifest.json
+          if-no-files-found: error

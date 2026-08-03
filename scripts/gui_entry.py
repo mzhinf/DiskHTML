@@ -1,4 +1,4 @@
-"""PyInstaller 入口：无参数启动 GUI，带参数执行 HTML 冷备命令。"""
+"""PyInstaller 入口：无参数启动生成界面，带参数执行 HTML 快照命令。"""
 
 from __future__ import annotations
 

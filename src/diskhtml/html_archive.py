@@ -162,27 +162,41 @@ def _selected_directory_payload(payload: dict[str, Any], directory: str) -> dict
     if directory not in _directories_from_payload(payload):
         raise ValueError(f"快照中不存在所选目录：{directory or '根目录'}")
     prefix = f"{directory}/" if directory else ""
-    selected: list[dict[str, Any]] = []
-    for row in payload["files"]:
-        relative_path = str(row["relative_path"])
-        if prefix and not relative_path.casefold().startswith(prefix.casefold()):
-            continue
-        item = dict(row)
-        item["relative_path"] = relative_path[len(prefix) :]
-        item["path_key"] = item["relative_path"].casefold()
-        selected.append(item)
-    selected_directories: list[dict[str, Any]] = []
-    for row in payload.get("directories", []):
-        if not isinstance(row, dict):
-            continue
-        relative_path = str(row.get("relative_path") or "")
-        if prefix and relative_path and not relative_path.casefold().startswith(prefix.casefold()):
-            continue
-        item = dict(row)
-        item["relative_path"] = relative_path[len(prefix) :] if prefix else relative_path
-        item["path_key"] = item["relative_path"].casefold()
-        selected_directories.append(item)
-    return {**payload, "directories": selected_directories, "files": selected}
+    selected_files = [
+        _rebased_row(row, str(row["relative_path"]), prefix)
+        for row in payload["files"]
+        if _matches_selected_directory(str(row["relative_path"]), prefix)
+    ]
+    selected_directories = [
+        _rebased_row(row, relative_path, prefix)
+        for row in payload.get("directories", [])
+        if isinstance(row, dict)
+        if _matches_selected_directory(
+            relative_path := str(row.get("relative_path") or ""), prefix, include_root=True
+        )
+    ]
+    return {**payload, "directories": selected_directories, "files": selected_files}
+
+
+def _matches_selected_directory(
+    relative_path: str, prefix: str, *, include_root: bool = False
+) -> bool:
+    """判断文件或目录是否属于选定目录；目录列表可额外保留其根节点。"""
+
+    return (
+        not prefix
+        or (include_root and not relative_path)
+        or relative_path.casefold().startswith(prefix.casefold())
+    )
+
+
+def _rebased_row(row: dict[str, Any], relative_path: str, prefix: str) -> dict[str, Any]:
+    """复制一条快照记录，并将选中目录作为新的相对路径根。"""
+
+    item = dict(row)
+    item["relative_path"] = relative_path[len(prefix) :] if prefix else relative_path
+    item["path_key"] = item["relative_path"].casefold()
+    return item
 
 
 def _directories_from_payload(payload: dict[str, Any]) -> tuple[str, ...]:
@@ -393,37 +407,51 @@ def _format_size(value: object) -> str:
 
 def _initial_table_rows(payload: dict[str, Any]) -> str:
     """预先写入条目，确保浏览器脚本异常时报告不会显示为空。"""
+
     compare = payload.get("kind") == "compare"
     entries = payload.get("entries", []) if compare else payload.get("files", [])
-    rows: list[str] = []
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        if compare:
-            current = item.get("new_size_bytes") is not None
-            size = item.get("new_size_bytes") if current else item.get("old_size_bytes")
-            modified = item.get("new_modified_time") if current else item.get("old_modified_time")
-            created = item.get("new_created_time") if current else item.get("old_created_time")
-            digest = item.get("new_sha256") if current else item.get("old_sha256")
-            same = str(item.get("status") or "ERROR")
-        else:
-            size = item.get("size_bytes")
-            modified = item.get("modified_time")
-            created = item.get("created_time")
-            digest = item.get("sha256")
-            same = ""
-        values = (
-            item.get("relative_path") or "(未命名文件)",
-            _format_size(size),
-            modified or "—",
-            created or "—",
-            digest or "—",
-            same,
-        )
-        rows.append(
-            "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in values) + "</tr>"
-        )
+    rows = [_fallback_table_row(item, compare) for item in entries if isinstance(item, dict)]
     return "".join(rows) or '<tr><td colspan="6">当前范围没有文件。</td></tr>'
+
+
+def _fallback_table_row(item: dict[str, Any], compare: bool) -> str:
+    """渲染浏览器脚本失效时使用的一条静态详情行。"""
+
+    values = _fallback_row_values(item, compare)
+    cells = "".join(f"<td>{html.escape(str(value))}</td>" for value in values)
+    return f"<tr>{cells}</tr>"
+
+
+def _fallback_row_values(item: dict[str, Any], compare: bool) -> tuple[object, ...]:
+    """统一选择快照或比较条目的静态展示字段。"""
+
+    if compare:
+        size, modified, created, digest = _comparison_fallback_values(item)
+        status = str(item.get("status") or "ERROR")
+    else:
+        size = item.get("size_bytes")
+        modified = item.get("modified_time")
+        created = item.get("created_time")
+        digest = item.get("sha256")
+        status = ""
+    return (
+        item.get("relative_path") or "(未命名文件)",
+        _format_size(size),
+        modified or "—",
+        created or "—",
+        digest or "—",
+        status,
+    )
+
+
+def _comparison_fallback_values(item: dict[str, Any]) -> tuple[object, object, object, object]:
+    """优先显示比较报告右侧记录，不存在时回退到左侧记录。"""
+
+    side = "new" if item.get("new_size_bytes") is not None else "old"
+    return tuple(
+        item.get(f"{side}_{field}")
+        for field in ("size_bytes", "modified_time", "created_time", "sha256")
+    )  # type: ignore[return-value]
 
 
 def _row_to_dict(row: Any) -> dict[str, Any] | None:
