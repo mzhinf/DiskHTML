@@ -1,5 +1,7 @@
 """DiskHTML.exe 精简命令行入口测试。"""
 
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -48,4 +50,7 @@ class ExeCliTests(TestCase):
             output = root / "backup.html"
             output.write_text("旧文件", encoding="utf-8")
 
-            self.assertEqual(main(["snapshot", str(source), str(output)]), 2)
+            error = StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(["snapshot", str(source), str(output)]), 2)
+            self.assertIn("输出 HTML 已存在", error.getvalue())
