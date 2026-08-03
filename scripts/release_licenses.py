@@ -637,9 +637,10 @@ def build_license_bundle(package: Path, project_root: Path, audit_path: Path) ->
     """生成完整许可证目录；发现未核验组件时在创建 ZIP 前失败。"""
 
     package = package.resolve()
-    components = discover_components(package)
+    components: tuple[ReleaseComponent, ...] = ()
     try:
         project_license = _project_license(project_root.resolve())
+        components = discover_components(package)
         unresolved = tuple(component for component in components if not component.is_resolved)
         if unresolved:
             detail = "; ".join(f"{item.name}: {item.review_reason}" for item in unresolved)

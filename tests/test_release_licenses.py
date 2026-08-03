@@ -6,7 +6,7 @@ import importlib.util
 import sys
 import tempfile
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, mock
 
 
 def _load_module() -> object:
@@ -54,8 +54,14 @@ class ReleaseLicenseTests(TestCase):
             (package / "DiskHTML.exe").write_bytes(b"placeholder")
             audit = root / "license-audit.json"
 
-            with self.assertRaises(self.module.ReleaseLicenseError):
-                self.module.build_license_bundle(package, root, audit)
+            package_not_found = self.module.importlib.metadata.PackageNotFoundError("pyinstaller")
+            with mock.patch.object(
+                self.module.importlib.metadata,
+                "version",
+                side_effect=package_not_found,
+            ):
+                with self.assertRaisesRegex(self.module.ReleaseLicenseError, "LICENSE"):
+                    self.module.build_license_bundle(package, root, audit)
 
             self.assertTrue(audit.is_file())
             self.assertFalse((package / "LICENSE.txt").exists())
