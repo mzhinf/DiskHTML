@@ -21,12 +21,11 @@ DiskHTML 的实际构建器是 Python 和 PyInstaller，不要求 PowerShell。�
 .\.venv\Scripts\python.exe .\scripts\build_windows.py --clean
 ~~~
 
-### 发布运行时固定规则
+### GitHub Actions 范围
 
-完整发布构建必须使用 `python-build-standalone` 的 `CPython 3.12.13 + 20260414` Windows x64 运行时。该运行时的 `BUILD` 文件为 `20260414`，与仓库 `third_party/license_sources/upstream/` 中已核验的原生库许可证来源一一对应。
+GitHub Actions 只执行格式、静态检查和单元测试，不构建、不上传 Windows 发布包。这样 CI 保持为通用的源码质量门禁，不与本机发布运行时、PyInstaller 或许可证资料耦合。
 
-GitHub Actions 会下载固定 URL 的运行时并校验 SHA-256 `d785d2e901a8194dcdb8c23c2b37a46ed84fdc04e87398dc5b832644330de71e`，随后校验 `BUILD=20260414` 后才创建 `.venv`。本地可使用其他 Python 3.12 运行格式执行源码测试；但若其底层 OpenSSL、SQLite 或静态原生库未登记，发布构建会按设计拒绝生成不完整的许可证包。
-
+正式 Windows 发布包必须在维护者的受控本地环境中使用本节命令构建，并继续执行 `verify_release.py`。构建器会从最终目录反向生成并验证许可证材料；许可证来源未核验时会停止发布，而不会生成不完整 ZIP。
 可选的 PowerShell 包装命令：
 
 ~~~powershell

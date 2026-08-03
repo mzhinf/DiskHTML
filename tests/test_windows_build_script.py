@@ -69,20 +69,20 @@ class WindowsBuildScriptTests(TestCase):
         self.assertNotIn("Compress-Archive", wrapper)
         self.assertNotIn("Remove-Item", wrapper)
 
-    def test_github_workflow_builds_with_project_virtual_environment(self) -> None:
-        """Windows CI 必须创建并使用与本地构建相同的 .venv 约定。"""
+    def test_github_workflow_only_checks_source_quality(self) -> None:
+        """Windows CI 应保持通用，只执行源码质量检查而不生成发布包。"""
 
         workflow = (self.project_root / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            "DISKHTML_RUNTIME_SHA256: d785d2e901a8194dcdb8c23c2b37a46ed84fdc04e87398dc5b832644330de71e",
-            workflow,
-        )
-        self.assertIn("BUILD mismatch", workflow)
-        self.assertIn('"%DISKHTML_PYTHON%" -m venv .venv', workflow)
-        self.assertIn(".venv\\Scripts\\python.exe scripts\\build_windows.py --clean", workflow)
-        self.assertIn(".venv\\Scripts\\python.exe scripts\\verify_release.py", workflow)
+        self.assertIn("uses: actions/setup-python@v6", workflow)
+        self.assertIn('python-version: "3.12"', workflow)
+        self.assertIn("python -m venv .venv", workflow)
+        self.assertIn(".[dev]", workflow)
+        self.assertIn("unittest discover", workflow)
+        self.assertNotIn("build_windows.py", workflow)
+        self.assertNotIn("verify_release.py", workflow)
+        self.assertNotIn("upload-artifact", workflow)
 
     def test_cleanup_rejects_paths_outside_build_directory(self) -> None:
         """路径计算错误绝不能删除构建目录外的内容。"""
