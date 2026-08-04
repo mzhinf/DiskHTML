@@ -27,7 +27,7 @@ DiskHTML/
 4. 实际内嵌的 Lucide 图标；
 5. bzip2、Expat、libffi、XZ/liblzma、mpdecimal、zlib、OpenSSL、SQLite 和 Microsoft Visual C++ Runtime 等原生组件。
 
-Python、Tcl/Tk 和原生库版本分别由运行时文件、Tcl 初始化脚本、PE 文件版本或固定构建来源交叉确认。随 Python 运行时静态进入 `python312.dll` 的组件也必须由明确的构建版本证据覆盖。
+Python、Tcl/Tk 和原生库版本分别由运行时文件、Tcl 初始化脚本、PE 文件版本或固定构建来源交叉确认。随 Python 运行时静态进入 `python3*.dll` 的组件也必须由运行时 `BUILD` 与来源登记表中的同修订证据覆盖。
 
 ## 许可证来源优先级
 

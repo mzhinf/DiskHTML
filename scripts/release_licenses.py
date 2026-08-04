@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import importlib.metadata
 import json
 import re
@@ -14,9 +15,9 @@ import sys
 from collections.abc import Iterable
 from ctypes import wintypes
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 
-REVIEWED_RUNTIME_BUILD = "20260414"
 REVIEWED_SOURCE_ROOT = (
     Path(__file__).resolve().parents[1] / "third_party" / "license_sources" / "upstream"
 )
@@ -54,17 +55,25 @@ class ReleaseComponent:
 
 
 @dataclass(frozen=True)
+class _ReviewedSource:
+    """描述来源登记表中已通过哈希校验的不可变许可证文件。"""
+
+    path: Path
+    sha256: str
+    components: tuple[str, ...]
+    source_revision: str
+
+
+@dataclass(frozen=True)
 class _RuntimeLibraryDefinition:
-    """描述与固定 Python 运行时一同发布的原生组件许可证规则。"""
+    """描述随 Python 运行时发布的原生组件识别规则。"""
 
     name: str
-    version: str
     license_type: str
     copyright_text: str
     website: str
     patterns: tuple[str, ...]
-    source_name: str
-    output_name: str
+    output_stem: str
 
 
 class _VsFixedFileInfo(ctypes.Structure):
@@ -137,11 +146,100 @@ def _runtime_build_id() -> str | None:
     return value or None
 
 
-def _reviewed_source(filename: str) -> Path | None:
-    """返回仓库内经过来源与哈希登记的许可证原文。"""
+@lru_cache(maxsize=1)
+def _reviewed_sources() -> tuple[_ReviewedSource, ...]:
+    """从唯一来源登记表读取并校验可用于发布的许可证文件。"""
 
-    candidate = REVIEWED_SOURCE_ROOT / filename
-    return candidate if candidate.is_file() else None
+    provenance_path = REVIEWED_SOURCE_ROOT / "provenance.json"
+    try:
+        payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, dict) or payload.get("format_version") != 1:
+        return ()
+
+    source_root = REVIEWED_SOURCE_ROOT.resolve()
+    reviewed: list[_ReviewedSource] = []
+    for item in payload.get("sources", ()):
+        if not isinstance(item, dict):
+            continue
+        filename = item.get("file")
+        expected_hash = item.get("sha256")
+        components = item.get("components")
+        source_revision = item.get("source_revision")
+        if (
+            not isinstance(filename, str)
+            or not isinstance(expected_hash, str)
+            or not isinstance(components, list)
+            or not all(isinstance(component, str) for component in components)
+            or not isinstance(source_revision, str)
+        ):
+            continue
+        candidate = (source_root / filename).resolve()
+        if source_root not in candidate.parents or not candidate.is_file():
+            continue
+        actual_hash = hashlib.sha256(candidate.read_bytes()).hexdigest().upper()
+        if actual_hash != expected_hash.upper():
+            continue
+        reviewed.append(
+            _ReviewedSource(
+                candidate,
+                expected_hash.upper(),
+                tuple(components),
+                source_revision,
+            )
+        )
+    return tuple(reviewed)
+
+
+def _registered_component(source: _ReviewedSource, name: str) -> str | None:
+    """返回登记来源中与组件名称唯一匹配的名称和版本。"""
+
+    prefix = f"{name} "
+    matches = tuple(
+        component
+        for component in source.components
+        if component == name or component.startswith(prefix)
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def _registered_version(source: _ReviewedSource, name: str) -> str | None:
+    """从登记组件项中提取版本，不在生成逻辑中重复声明。"""
+
+    component = _registered_component(source, name)
+    if component is None or component == name:
+        return None
+    return component.removeprefix(f"{name} ").strip() or None
+
+
+def _reviewed_source_for_component(
+    name: str,
+    *,
+    version: str | None = None,
+    source_revision: str | None = None,
+) -> _ReviewedSource | None:
+    """按组件、实际版本和可选来源修订选择唯一已核验来源。"""
+
+    expected_component = f"{name} {version}" if version is not None else None
+    matches = []
+    for source in _reviewed_sources():
+        component = _registered_component(source, name)
+        if component is None:
+            continue
+        if expected_component is not None and component != expected_component:
+            continue
+        if source_revision is not None and source.source_revision != source_revision:
+            continue
+        matches.append(source)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _reviewed_source(filename: str) -> Path | None:
+    """按登记文件名返回已通过哈希校验的许可证原文。"""
+
+    matches = tuple(source.path for source in _reviewed_sources() if source.path.name == filename)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _project_license(project_root: Path) -> Path:
@@ -228,26 +326,36 @@ def _runtime_component(
     *,
     category: str,
     name: str,
-    version: str,
     license_type: str,
     copyright_text: str,
     website: str,
     patterns: tuple[str, ...],
-    source_name: str,
-    output_name: str,
+    output_stem: str,
 ) -> ReleaseComponent | None:
-    """按最终文件证据创建与当前不可变 Python 发行版绑定的组件。"""
+    """按最终文件证据和运行时 BUILD 选择同修订许可证来源。"""
 
     evidence = _evidence(package, patterns)
     if not evidence:
         return None
+
     build_id = _runtime_build_id()
-    source = _reviewed_source(source_name) if build_id == REVIEWED_RUNTIME_BUILD else None
+    source_revision = f"python-build-standalone {build_id}" if build_id else None
+    reviewed = (
+        _reviewed_source_for_component(name, source_revision=source_revision)
+        if source_revision is not None
+        else None
+    )
+    registered_version = _registered_version(reviewed, name) if reviewed is not None else None
+    version = registered_version or "未知"
+    source = reviewed.path if reviewed is not None else None
+
     reason = None
-    if build_id != REVIEWED_RUNTIME_BUILD:
-        reason = f"当前构建运行时编号为 {build_id or '未知'}，尚未核对其 {name} 版本和许可证来源。"
-    elif source is None:
-        reason = f"缺少已登记许可证来源：{source_name}"
+    if build_id is None:
+        reason = f"无法读取当前构建运行时编号，尚未核对其 {name} 版本和许可证来源。"
+    elif reviewed is None:
+        reason = f"来源登记表未包含运行时 {build_id} 对应的 {name} 许可证。"
+    elif registered_version is None:
+        reason = f"来源登记表未记录 {name} 的版本。"
     return ReleaseComponent(
         category,
         name,
@@ -257,7 +365,7 @@ def _runtime_component(
         website,
         evidence,
         source,
-        output_name,
+        f"{output_stem}-{version}.txt",
         reason,
     )
 
@@ -302,7 +410,7 @@ def _discover_python_component(package: Path) -> ReleaseComponent | None:
         "Python",
         version,
         "Python Software Foundation License",
-        "Copyright (c) 2001-2026 Python Software Foundation.",
+        "Copyright held by Python Software Foundation and contributors.",
         "https://www.python.org/",
         evidence,
         _runtime_license(),
@@ -321,7 +429,7 @@ def _discover_pyinstaller_component(package: Path) -> ReleaseComponent | None:
         "PyInstaller Bootloader and Runtime Hooks",
         version,
         "GNU General Public License v2 or later with a bootloader exception",
-        "Copyright (c) 2010-2026 PyInstaller Development Team.",
+        "Copyright held by the PyInstaller Development Team and contributors.",
         "https://pyinstaller.org/",
         ("DiskHTML.exe (embedded bootloader)",),
         _distribution_license("pyinstaller", "COPYING.txt"),
@@ -391,81 +499,71 @@ def _discover_lucide_component(package: Path) -> ReleaseComponent | None:
     )
     if not evidence:
         return None
-    source = _reviewed_source("Lucide-1.27.0.txt")
+    reviewed = _reviewed_source_for_component("Lucide Icons")
+    version = _registered_version(reviewed, "Lucide Icons") if reviewed is not None else None
+    source = reviewed.path if reviewed is not None else None
     return ReleaseComponent(
         "Embedded Assets",
         "Lucide Icons",
-        "1.27.0",
+        version or "未知",
         "ISC License; selected Feather-derived icons under the MIT License",
-        "Copyright (c) 2026 Lucide Icons and Contributors; Feather portions Copyright (c) 2013-present Cole Bemis.",
+        "Copyright held by Lucide Icons and contributors; Feather portions Copyright (c) 2013-present Cole Bemis.",
         "https://lucide.dev/",
         evidence,
         source,
-        "Lucide-1.27.0.txt",
-        None if source else "缺少 Lucide 1.27.0 官方完整许可证。",
+        f"Lucide-{version or '未知'}.txt",
+        None if source and version else "来源登记表缺少唯一的 Lucide Icons 版本和许可证。",
     )
 
 
 _NATIVE_RUNTIME_COMPONENTS = (
     _RuntimeLibraryDefinition(
         "bzip2",
-        "1.0.8",
         "bzip2 License",
         "Copyright (c) 1996-2019 Julian Seward.",
         "https://sourceware.org/bzip2/",
         ("_internal/_bz2.pyd",),
-        "python-build-standalone-20260414-bzip2.txt",
-        "bzip2-1.0.8.txt",
+        "bzip2",
     ),
     _RuntimeLibraryDefinition(
         "Expat",
-        "2.6.3",
         "MIT License",
         "Copyright (c) 1998-2000 Thai Open Source Software Center Ltd and Clark Cooper; subsequent contributors.",
         "https://libexpat.github.io/",
         ("_internal/pyexpat.pyd",),
-        "python-build-standalone-20260414-expat.txt",
-        "Expat-2.6.3.txt",
+        "Expat",
     ),
     _RuntimeLibraryDefinition(
         "libffi",
-        "3.4.6",
         "MIT License",
         "Copyright (c) 1996-2024 Anthony Green, Red Hat, Inc. and others.",
         "https://github.com/libffi/libffi",
         ("_internal/libffi-*.dll", "_internal/_ctypes.pyd"),
-        "libffi-python-build-standalone-20260414.txt",
-        "libffi-3.4.6.txt",
+        "libffi",
     ),
     _RuntimeLibraryDefinition(
         "XZ Utils / liblzma",
-        "5.8.1",
         "0BSD License and public-domain notices",
         "Copyright held by the XZ Utils authors and contributors as listed in the license text.",
         "https://tukaani.org/xz/",
         ("_internal/_lzma.pyd", "_internal/liblzma*.dll"),
-        "python-build-standalone-20260414-liblzma.txt",
-        "XZ-Utils-5.8.1.txt",
+        "XZ-Utils",
     ),
     _RuntimeLibraryDefinition(
         "mpdecimal",
-        "4.0.0",
         "BSD-2-Clause License",
         "Copyright (c) 2008-2024 Stefan Krah. All rights reserved.",
         "https://www.bytereef.org/mpdecimal/",
         ("_internal/_decimal.pyd",),
-        "python-build-standalone-20260414-mpdecimal.txt",
-        "mpdecimal-4.0.0.txt",
+        "mpdecimal",
     ),
     _RuntimeLibraryDefinition(
         "zlib",
-        "1.3.1",
         "zlib License",
         "Copyright (c) 1995-2024 Jean-loup Gailly and Mark Adler.",
         "https://zlib.net/",
         ("_internal/zlib*.dll", "_internal/zlib.pyd", "_internal/python3??.dll"),
-        "python-build-standalone-20260414-zlib.txt",
-        "zlib-1.3.1.txt",
+        "zlib",
     ),
 )
 
@@ -481,13 +579,11 @@ def _discover_runtime_library_components(package: Path) -> list[ReleaseComponent
                 package,
                 category="Native Libraries",
                 name=definition.name,
-                version=definition.version,
                 license_type=definition.license_type,
                 copyright_text=definition.copyright_text,
                 website=definition.website,
                 patterns=definition.patterns,
-                source_name=definition.source_name,
-                output_name=definition.output_name,
+                output_stem=definition.output_stem,
             )
         )
         is not None
@@ -502,13 +598,14 @@ def _discover_openssl_component(package: Path) -> ReleaseComponent | None:
         return None
     detected = _first_file_version(package, ("_internal/libcrypto-*.dll",))
     version = detected or re.sub(r"^OpenSSL\s+", "", ssl.OPENSSL_VERSION).split()[0]
-    source = _reviewed_source("OpenSSL-3.5.6.txt") if version == "3.5.6" else None
+    reviewed = _reviewed_source_for_component("OpenSSL", version=version)
+    source = reviewed.path if reviewed is not None else None
     return ReleaseComponent(
         "Native Libraries",
         "OpenSSL",
         version,
         "Apache License 2.0",
-        "Copyright (c) 1998-2026 The OpenSSL Project Authors.",
+        "Copyright held by The OpenSSL Project Authors.",
         "https://www.openssl.org/",
         evidence,
         source,
@@ -525,7 +622,8 @@ def _discover_sqlite_component(package: Path) -> ReleaseComponent | None:
         return None
     detected = _first_file_version(package, ("_internal/sqlite3.dll",))
     version = detected or sqlite3.sqlite_version
-    source = _reviewed_source("SQLite-3.50.4-Public-Domain.txt") if version == "3.50.4" else None
+    reviewed = _reviewed_source_for_component("SQLite", version=version)
+    source = reviewed.path if reviewed is not None else None
     return ReleaseComponent(
         "Native Libraries",
         "SQLite",

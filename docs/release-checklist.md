@@ -40,7 +40,7 @@ Get-FileHash .\build\dist\DiskHTML\DiskHTML.exe -Algorithm SHA256
 Get-FileHash .\build\release\DiskHTML-win-x64.zip -Algorithm SHA256
 ~~~
 
-- [ ] ZIP 只有一个 `DiskHTML/` 顶层目录，并包含 `DiskHTML.exe` 与 `_internal/python312.dll`。
+- [ ] ZIP 只有一个 `DiskHTML/` 顶层目录，并包含 `DiskHTML.exe` 与 `_internal/python3*.dll`。
 - [ ] 独立解压验证实际生成含中文数据的 HTML 和同名 SQLite。
 - [ ] 发布页面和下载说明明确“完整解压 ZIP，不能单独复制 EXE”。
 - [ ] 记录 Python、PyInstaller、Tcl/Tk、Windows 版本、文件大小和 SHA-256。

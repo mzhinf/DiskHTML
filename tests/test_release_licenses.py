@@ -41,8 +41,100 @@ class ReleaseLicenseTests(TestCase):
             [definition.name for definition in definitions],
         )
         self.assertTrue(all(definition.patterns for definition in definitions))
-        self.assertTrue(all(definition.source_name for definition in definitions))
-        self.assertTrue(all(definition.output_name for definition in definitions))
+        self.assertTrue(all(definition.output_stem for definition in definitions))
+        self.assertTrue(all(not hasattr(definition, "version") for definition in definitions))
+
+    def test_runtime_component_metadata_comes_from_provenance(self) -> None:
+        """运行时构建号、组件版本和许可证文件必须由来源登记表共同决定。"""
+
+        definition = self.module._NATIVE_RUNTIME_COMPONENTS[0]
+        runtime_sources = tuple(
+            source
+            for source in self.module._reviewed_sources()
+            if source.source_revision.startswith("python-build-standalone ")
+            and self.module._registered_component(source, definition.name) is not None
+        )
+        self.assertTrue(runtime_sources)
+
+        for reviewed in runtime_sources:
+            build_id = reviewed.source_revision.removeprefix("python-build-standalone ")
+            registered_version = self.module._registered_version(reviewed, definition.name)
+            self.assertIsNotNone(registered_version)
+            with tempfile.TemporaryDirectory() as temporary:
+                package = Path(temporary)
+                evidence = package / definition.patterns[0]
+                evidence.parent.mkdir(parents=True)
+                evidence.write_bytes(b"runtime")
+                with mock.patch.object(self.module, "_runtime_build_id", return_value=build_id):
+                    component = self.module._runtime_component(
+                        package,
+                        category="Native Libraries",
+                        name=definition.name,
+                        license_type=definition.license_type,
+                        copyright_text=definition.copyright_text,
+                        website=definition.website,
+                        patterns=definition.patterns,
+                        output_stem=definition.output_stem,
+                    )
+
+            self.assertIsNotNone(component)
+            self.assertEqual(registered_version, component.version)
+            self.assertEqual(reviewed.path, component.license_source)
+            self.assertEqual(
+                f"{definition.output_stem}-{registered_version}.txt",
+                component.license_filename,
+            )
+            self.assertTrue(component.is_resolved)
+
+    def test_unregistered_runtime_build_is_unresolved(self) -> None:
+        """来源登记表没有对应 BUILD 时必须保持阻断，不能套用其他版本。"""
+
+        definition = self.module._NATIVE_RUNTIME_COMPONENTS[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            evidence = package / definition.patterns[0]
+            evidence.parent.mkdir(parents=True)
+            evidence.write_bytes(b"runtime")
+            with mock.patch.object(
+                self.module,
+                "_runtime_build_id",
+                return_value="fixture-unreviewed-build",
+            ):
+                component = self.module._runtime_component(
+                    package,
+                    category="Native Libraries",
+                    name=definition.name,
+                    license_type=definition.license_type,
+                    copyright_text=definition.copyright_text,
+                    website=definition.website,
+                    patterns=definition.patterns,
+                    output_stem=definition.output_stem,
+                )
+
+        self.assertIsNotNone(component)
+        self.assertFalse(component.is_resolved)
+        self.assertEqual("未知", component.version)
+        self.assertIn("来源登记表未包含", component.review_reason)
+
+    def test_lucide_version_comes_from_provenance(self) -> None:
+        """素材许可证版本不得在发现逻辑中再次声明。"""
+
+        reviewed = self.module._reviewed_source_for_component("Lucide Icons")
+        self.assertIsNotNone(reviewed)
+        expected_version = self.module._registered_version(reviewed, "Lucide Icons")
+        self.assertIsNotNone(expected_version)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            asset = package / "_internal" / "diskhtml" / "assets" / "folder-tree.svg"
+            asset.parent.mkdir(parents=True)
+            asset.write_text("<svg/>", encoding="utf-8")
+            component = self.module._discover_lucide_component(package)
+
+        self.assertIsNotNone(component)
+        self.assertEqual(expected_version, component.version)
+        self.assertEqual(reviewed.path, component.license_source)
+        self.assertTrue(component.is_resolved)
 
     def test_missing_project_license_stops_generation_and_writes_audit(self) -> None:
         """构建不得臆造未由维护者提供的 DiskHTML 许可证。"""

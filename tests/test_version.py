@@ -21,7 +21,9 @@ class VersionTests(TestCase):
             expected = tomllib.load(handle)["project"]["version"]
         self.assertEqual(expected, __version__)
         self.assertEqual(expected, get_version())
-        self.assertEqual("1.0.0", expected)
+        self.assertIsInstance(expected, str)
+        self.assertEqual(expected, expected.strip())
+        self.assertTrue(expected)
 
     def test_package_init_no_longer_contains_a_literal_version(self) -> None:
         """包入口只重导出版本，避免形成第二个手工版本来源。"""

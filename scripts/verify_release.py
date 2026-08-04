@@ -31,11 +31,15 @@ def _validate_runtime_layout(package: Path) -> None:
     """确认最终发布包包含 Tkinter 且完全不含 Qt 运行时。"""
 
     internal = package / "_internal"
-    required_files = (
-        internal / "python312.dll",
-        internal / "_tkinter.pyd",
-    )
+    runtime_dlls = tuple(sorted(internal.glob("python3*.dll")))
+    if len(runtime_dlls) > 1:
+        names = ", ".join(path.name for path in runtime_dlls)
+        raise RuntimeError(f"发布包包含多个 Python 运行时 DLL：{names}")
+
+    required_files = (internal / "_tkinter.pyd",)
     missing = [item.name for item in required_files if not item.is_file()]
+    if not runtime_dlls:
+        missing.append("python3*.dll")
     if not any(internal.glob("tcl*.dll")):
         missing.append("tcl*.dll")
     if not any(internal.glob("tk*.dll")):

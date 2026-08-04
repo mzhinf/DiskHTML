@@ -14,7 +14,7 @@ DiskHTML 的实际构建器是 Python 和 PyInstaller，不要求 PowerShell。�
 
 ## 环境与命令
 
-要求 Windows 10/11、Python 3.12 和项目虚拟环境：
+要求 Windows 10/11、Python 3.12 和项目虚拟环境。构建器会从运行环境识别架构，当前发布契约仅接受 x64；其他架构会在打包前明确停止，不能生成错误标记为 x64 的 ZIP：
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,build]"
@@ -51,7 +51,7 @@ pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 .\.venv\Scripts\python.exe .\scripts\verify_release.py .\build\release\DiskHTML-win-x64.zip
 ~~~
 
-发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe` 和 `_internal\python312.dll`，校验内嵌 `pyproject.toml` 的版本，运行 `--version`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
+发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe` 和 `_internal\python3*.dll`，校验内嵌 `pyproject.toml` 的版本，运行 `--version`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
 
 ## 人工验收
 

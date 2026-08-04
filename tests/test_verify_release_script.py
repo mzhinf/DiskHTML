@@ -40,7 +40,7 @@ class ReleaseVerificationScriptTests(TestCase):
             archive_path = Path(temporary) / "release.zip"
             with zipfile.ZipFile(archive_path, "w") as archive:
                 archive.writestr("DiskHTML/DiskHTML.exe", b"exe")
-                archive.writestr("DiskHTML/_internal/python312.dll", b"dll")
+                archive.writestr("DiskHTML/_internal/python399.dll", b"dll")
 
             with zipfile.ZipFile(archive_path) as archive:
                 validate(archive)
@@ -53,7 +53,7 @@ class ReleaseVerificationScriptTests(TestCase):
             package = Path(temporary)
             internal = package / "_internal"
             internal.mkdir()
-            (internal / "python312.dll").write_bytes(b"python")
+            (internal / "python399.dll").write_bytes(b"python")
             with self.assertRaises(RuntimeError):
                 validate(package)
 
@@ -65,7 +65,7 @@ class ReleaseVerificationScriptTests(TestCase):
             package = Path(temporary)
             internal = package / "_internal"
             internal.mkdir()
-            for name in ("python312.dll", "_tkinter.pyd", "tcl86t.dll", "tk86t.dll"):
+            for name in ("python399.dll", "_tkinter.pyd", "tcl86t.dll", "tk86t.dll"):
                 (internal / name).write_bytes(b"runtime")
             (internal / "_tcl_data").mkdir()
             (internal / "_tk_data").mkdir()
@@ -75,4 +75,27 @@ class ReleaseVerificationScriptTests(TestCase):
             qt.mkdir()
             (qt / "Qt6Core.dll").write_bytes(b"qt")
             with self.assertRaises(RuntimeError):
+                validate(package)
+
+    def test_runtime_layout_rejects_multiple_python_runtimes(self) -> None:
+        """发布包只能包含一个由实际构建环境决定的 Python 运行时 DLL。"""
+
+        validate = self.verifier["_validate_runtime_layout"]
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            internal = package / "_internal"
+            internal.mkdir()
+            runtime_files = (
+                "python398.dll",
+                "python399.dll",
+                "_tkinter.pyd",
+                "tcl86t.dll",
+                "tk86t.dll",
+            )
+            for name in runtime_files:
+                (internal / name).write_bytes(b"runtime")
+            (internal / "_tcl_data").mkdir()
+            (internal / "_tk_data").mkdir()
+
+            with self.assertRaisesRegex(RuntimeError, "多个 Python 运行时 DLL"):
                 validate(package)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,15 @@ def _controlled_build_environment(python: Path) -> dict[str, str]:
     return environment
 
 
+def _release_architecture(machine: str | None = None) -> str:
+    """从实际构建环境识别受支持的 Windows 发布架构。"""
+
+    detected = (platform.machine() if machine is None else machine).casefold()
+    if detected in {"amd64", "x86_64"}:
+        return "x64"
+    raise RuntimeError(f"当前 Windows 发布流程仅支持 x64，实际架构为：{detected or '未知'}")
+
+
 def _write_release_archive(package: Path, archive: Path) -> None:
     """创建仅包含完整 DiskHTML 目录作为顶层条目的 ZIP。"""
 
@@ -70,7 +80,8 @@ def build_windows(project_root: Path, *, clean: bool = False) -> tuple[Path, Pat
     assets = root / "src" / "diskhtml" / "assets"
     executable_icon = assets / "folder-tree.ico"
     legacy_single_file = dist / "DiskHTML.exe"
-    release_archive = build_root / "release" / "DiskHTML-win-x64.zip"
+    architecture = _release_architecture()
+    release_archive = build_root / "release" / f"DiskHTML-win-{architecture}.zip"
     project_version = read_project_version(root)
 
     if not python.is_file():

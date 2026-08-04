@@ -49,5 +49,5 @@
 | Windows CI 与独立发布包验证 | 已完成 | `.github/workflows/ci.yml`、`scripts/verify_release.py` |
 | 旧式项目 UI 发布说明清理 | 已完成 | `release-checklist.md` 已按三个任务页重写 |
 | 发布许可证材料 | 已自动化 | 根据最终目录包生成声明与许可证，并以未知组件、版本或 Qt 残留为构建阻断项；见 `release-licenses.md` |
-| GitHub remote、默认分支和版本标签 | 待仓库创建后完成 | 建议确认分支命名并创建 `v1.0.0` 标签 |
+| GitHub remote、默认分支和版本标签 | 待仓库创建后完成 | 建议确认分支命名，并按 `pyproject.toml` 的 `project.version` 创建对应 `v<版本>` 标签 |
 | Git 提交者邮箱隐私 | 待维护者确认 | 当前历史会公开提交者邮箱；必要时改用 GitHub noreply 或重写历史 |

@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -17,6 +18,8 @@ class ReleaseManifestScriptTests(TestCase):
 
         project_root = Path(__file__).parent.parent
         script = project_root / "scripts" / "create_release_manifest.py"
+        with (project_root / "pyproject.toml").open("rb") as handle:
+            project_version = tomllib.load(handle)["project"]["version"]
         payload = b"DiskHTML release test"
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
@@ -36,7 +39,7 @@ class ReleaseManifestScriptTests(TestCase):
             manifest = json.loads(output.read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["package_name"], "DiskHTML")
-        self.assertEqual(manifest["product_version"], "1.0.0")
+        self.assertEqual(manifest["product_version"], project_version)
         self.assertEqual(manifest["package_file_count"], 2)
         self.assertEqual(manifest["package_bytes"], len(payload) + len(b"runtime"))
         self.assertEqual(
