@@ -7,8 +7,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from diskhtml.config import HashMode
 from diskhtml.database import Database
 from diskhtml.models import ScanStatus
+from diskhtml.sampled_hash import FULL_SHA256_ALGORITHM, sampled_sha256_algorithm
 from diskhtml.scanner import Scanner, ScanOptions
 
 
@@ -43,6 +45,32 @@ class ScannerTests(TestCase):
                 self.assertEqual(
                     records["b.txt"]["sha256"], hashlib.sha256(b"beta").hexdigest().upper()
                 )
+                self.assertEqual(records["a.txt"]["hash_algorithm"], FULL_SHA256_ALGORITHM)
+
+    def test_sampled_scan_records_each_files_actual_algorithm(self) -> None:
+        """采样模式下，预算内文件仍为完整 Hash，大文件保存采样算法。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "small.bin").write_bytes(b"small")
+            (source / "large.bin").write_bytes(bytes(range(64)))
+            options = ScanOptions(
+                workers=1,
+                queue_size=1,
+                hash_mode=HashMode.SAMPLED,
+                sample_budget=8,
+                sample_count=4,
+            )
+            with Database(root / "archive.sqlite3") as database:
+                scan_id = Scanner(database).start(source, options)
+                scan = database.get_scan(scan_id)
+                records = {row["relative_path"]: row for row in database.iter_files(scan_id)}
+
+        self.assertEqual(scan["hash_algorithm"], sampled_sha256_algorithm(8, 4))
+        self.assertEqual(records["small.bin"]["hash_algorithm"], FULL_SHA256_ALGORITHM)
+        self.assertEqual(records["large.bin"]["hash_algorithm"], sampled_sha256_algorithm(8, 4))
 
     def test_follow_links_handles_windows_junction_root(self) -> None:
         """启用跟随链接时，根路径为 Windows junction 也应能扫描。"""

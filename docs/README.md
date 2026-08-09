@@ -21,6 +21,8 @@
 | [html-archive-design.md](html-archive-design.md) | 产品边界、分层、比较语义和可视化要求 | 设计、开发者 | HTML 数据或交互设计改变 |
 | [html-ui-guide.md](html-ui-guide.md) | 离线页面的目录树、搜索、排序、详情和盘符切换 | 最终用户 | HTML 页面交互改变 |
 | [recovery.md](recovery.md) | 扫描状态、暂停、取消和恢复语义 | 开发者 | 扫描状态机改变 |
+| [refactor-plan.md](refactor-plan.md) | 行为保持型现代化重构批次、等价检查和独立迁移边界 | 维护者、贡献者 | 完成重构批次、发现新技术债或调整迁移边界 |
+| [sampled-fingerprint.md](sampled-fingerprint.md) | 固定次数、固定预算采样指纹的接口、格式和安全边界 | 开发者 | 采样算法、参数、返回字段或格式版本改变 |
 | [release-checklist.md](release-checklist.md) | 许可、质量、构建、独立运行和人工验收门禁 | 发布人员 | 发布流程或验收标准改变 |
 | [release-licenses.md](release-licenses.md) | 发布许可证目录、组件识别、来源优先级和自动阻断规则 | 发布人员、维护者 | 运行时、构建方式或许可证来源改变 |
 | [rework-analysis.md](rework-analysis.md) | 多轮返工根因、PowerShell 边界、防线和剩余技术债 | 维护者、贡献者 | 发生重大返工或验收策略改变 |

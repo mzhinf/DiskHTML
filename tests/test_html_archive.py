@@ -5,12 +5,13 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from diskhtml import __version__, html_archive
-from diskhtml.config import ScanConfig
+from diskhtml.config import HashMode, ScanConfig
 from diskhtml.html_archive import (
     compare_html_archives,
     compare_html_directory_to_source,
     create_html_snapshot,
     html_snapshot_directories,
+    html_snapshot_scan_config,
     read_html_snapshot,
     render_html_snapshot_from_sqlite,
     sqlite_snapshot_path,
@@ -182,6 +183,63 @@ class HtmlArchiveTests(TestCase):
         self.assertIn("<td>ADDED</td>", text)
         self.assertNotIn("outside.txt", text)
 
+    def test_current_directory_uses_html_sampled_strategy_end_to_end(self) -> None:
+        """当前目录应使用 HTML 指定策略，并把一致结果标为采样预检一致。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            historical = root / "historical"
+            current = root / "current"
+            historical.mkdir()
+            current.mkdir()
+            content = bytes(range(64))
+            (historical / "large.bin").write_bytes(content)
+            (current / "large.bin").write_bytes(content)
+            options = ScanConfig(
+                workers=1,
+                queue_size=1,
+                hash_mode=HashMode.SAMPLED,
+                sample_budget=8,
+                sample_count=4,
+            )
+            archive = create_html_snapshot(historical, root / "sampled.html", options)
+            strategy = html_snapshot_scan_config(archive)
+            comparison = compare_html_directory_to_source(
+                archive,
+                "",
+                current,
+                root / "comparison.html",
+                ScanConfig(workers=1, queue_size=1),
+            )
+            comparison_text = comparison.read_text(encoding="utf-8")
+
+        self.assertEqual(HashMode.SAMPLED, strategy.hash_mode)
+        self.assertEqual(8, strategy.sample_budget)
+        self.assertEqual(4, strategy.sample_count)
+        self.assertIn('"PRECHECK_MATCH":1', comparison_text)
+        self.assertIn("采样预检一致", comparison_text)
+
+    def test_previous_html_format_is_rejected(self) -> None:
+        """旧 HTML 格式应明确拒绝，不执行兼容读取。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            archive = create_html_snapshot(
+                source, root / "current.html", ScanConfig(workers=1, queue_size=1)
+            )
+            legacy = root / "legacy.html"
+            legacy.write_text(
+                archive.read_text(encoding="utf-8").replace(
+                    '"format_version":2', '"format_version":1', 1
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "不兼容"):
+                read_html_snapshot(legacy)
+
     def test_comparison_fallback_rows_use_available_side_metadata(self) -> None:
         """静态回退表格应为新增和缺失条目选择存在一侧的详情。"""
 
@@ -195,6 +253,7 @@ class HtmlArchiveTests(TestCase):
                         "old_modified_time": "旧修改时间",
                         "old_created_time": "旧创建时间",
                         "old_sha256": "OLD",
+                        "old_hash_algorithm": "full-sha256",
                         "new_size_bytes": None,
                         "status": "MISSING",
                     },
@@ -205,6 +264,7 @@ class HtmlArchiveTests(TestCase):
                         "new_modified_time": "新修改时间",
                         "new_created_time": "新创建时间",
                         "new_sha256": "NEW",
+                        "new_hash_algorithm": "full-sha256",
                         "status": "ADDED",
                     },
                 ],
@@ -212,9 +272,9 @@ class HtmlArchiveTests(TestCase):
         )
 
         self.assertIn("<td>only-old.txt</td><td>2.0 KB</td><td>旧修改时间</td>", rows)
-        self.assertIn("<td>OLD</td><td>MISSING</td>", rows)
+        self.assertIn("<td>OLD</td><td>full-sha256</td><td>MISSING</td>", rows)
         self.assertIn("<td>only-new.txt</td><td>3.0 KB</td><td>新修改时间</td>", rows)
-        self.assertIn("<td>NEW</td><td>ADDED</td>", rows)
+        self.assertIn("<td>NEW</td><td>full-sha256</td><td>ADDED</td>", rows)
 
     def test_backup_rejects_non_html_or_existing_output(self) -> None:
         """用户交付物必须是新建的 .html 文件，避免覆盖既有快照。"""

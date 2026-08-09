@@ -7,6 +7,7 @@ from unittest import TestCase
 
 from diskhtml.database import MIGRATIONS, SCHEMA_VERSION, Database
 from diskhtml.models import CompareStatus, ScanStatus
+from diskhtml.sampled_hash import FULL_SHA256_ALGORITHM
 
 
 class DatabaseTests(TestCase):
@@ -43,8 +44,8 @@ class DatabaseTests(TestCase):
         self.assertTrue(any("scan_errors" in problem for problem in problems))
         self.assertTrue(any("进度计数" in problem for problem in problems))
 
-    def test_legacy_version_one_database_is_migrated(self) -> None:
-        """版本 1 项目应原地升级到当前版本。"""
+    def test_legacy_version_one_database_is_rejected(self) -> None:
+        """旧版本项目应明确拒绝，且不得执行数据库升级。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             path = Path(directory) / "legacy.sqlite3"
@@ -62,10 +63,8 @@ class DatabaseTests(TestCase):
             finally:
                 connection.close()
 
-            with Database.open_existing(path) as database:
-                self.assertEqual(database.schema_version(), SCHEMA_VERSION)
-                self.assertEqual(database.migration_versions(), (2, 3))
-                self.assertEqual(database.integrity_check(), "ok")
+            with self.assertRaisesRegex(RuntimeError, "不兼容"):
+                Database.open_existing(path)
 
     def test_newer_schema_is_rejected_without_downgrade(self) -> None:
         """比当前程序更新的项目数据库不能被静默写入。"""
@@ -84,7 +83,7 @@ class DatabaseTests(TestCase):
             finally:
                 connection.close()
 
-            with self.assertRaisesRegex(RuntimeError, "新于当前程序"):
+            with self.assertRaisesRegex(RuntimeError, "不兼容"):
                 Database.open_existing(path)
 
     def test_database_enforces_scan_state_machine(self) -> None:
@@ -179,6 +178,7 @@ class DatabaseTests(TestCase):
             "modified_time": "2026-07-24T00:00:00Z",
             "mtime_ns": 0,
             "sha256": "A" * 64,
+            "hash_algorithm": FULL_SHA256_ALGORITHM,
             "sha512": None,
             "hash_status": "OK",
             "attempt_count": 1,

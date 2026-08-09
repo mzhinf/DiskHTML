@@ -14,14 +14,14 @@ DiskHTML.exe 是生成器，不渲染最终快照内容；浏览器中的 HTML �
 
 ~~~text
 本机目录
-  → Scanner：枚举、SHA-256、有界并发
+  → Scanner：枚举、HTML 指定的 Hash 策略、有界并发
   → SQLite：事务写入和长期索引
   → HTML renderer：内联数据、CSS、JavaScript、SVG
   → 单文件离线快照
 
 基准 HTML 中选定目录 + 本机目录
   → 重定根 + 当前目录扫描
-  → 相对路径归并 + SHA-256 判定
+  → 相对路径归并 + 大小、算法与摘要判定
   → 与快照相同布局、增加状态列的离线比较 HTML
 ~~~
 
@@ -35,7 +35,7 @@ DiskHTML.exe 是生成器，不渲染最终快照内容；浏览器中的 HTML �
 2. 移除选中目录前缀，使其成为基准根；
 3. 扫描本机待检查目录，使其成为当前根；
 4. 使用大小写无关的规范化相对路径对齐；
-5. 以 SHA-256 和有效状态产生 `MATCH/CHANGED/ADDED/MISSING/ERROR`。
+5. 以大小、算法、摘要和有效状态产生 `MATCH/PRECHECK_MATCH/CHANGED/ADDED/MISSING/ERROR`；当前目录必须使用基准 HTML 指定算法。
 
 因此历史 `资料/照片` 可与任意盘符、任意名称的本机目录比较。
 
@@ -43,7 +43,7 @@ DiskHTML.exe 是生成器，不渲染最终快照内容；浏览器中的 HTML �
 
 - 顶部显示快照名称、文件/目录/Hash 数、生成时间、可用磁盘信息、搜索和设置入口；
 - 主体采用左侧固定宽度目录树、右侧高密度文件表；两侧在各自区域滚动；
-- 文件表显示 Name、Size、Modified，并可开启 Created、SHA-256；比较报告增加 Status；
+- 文件表显示 Name、Size、Modified，并可开启 Created、摘要和算法；比较报告增加 Status；
 - Name 前使用内联 Lucide 文件/文件夹 SVG，树中用箭头和打开/关闭文件夹 SVG；
 - 面包屑和文件夹行可导航，支持返回父目录；
 - 搜索只按真实关键词匹配，结果在同一列表中展示并高亮；

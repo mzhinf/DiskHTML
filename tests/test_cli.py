@@ -8,6 +8,8 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from diskhtml.cli import main
+from diskhtml.html_archive import read_html_snapshot
+from diskhtml.sampled_hash import sampled_sha256_algorithm
 
 
 class CliTests(TestCase):
@@ -118,6 +120,33 @@ class CliTests(TestCase):
             self.assertTrue(comparison.is_file())
             self.assertIn('id="same-heading"', source_comparison.read_text(encoding="utf-8"))
             self.assertIn('id="same-heading"', comparison.read_text(encoding="utf-8"))
+
+    def test_snapshot_cli_accepts_sampled_strategy(self) -> None:
+        """快照命令应把固定预算采样策略写入 HTML。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "large.bin").write_bytes(bytes(range(64)))
+            archive = root / "sampled.html"
+
+            self._run(
+                [
+                    "snapshot",
+                    str(source),
+                    str(archive),
+                    "--hash-mode",
+                    "sampled",
+                    "--sample-budget",
+                    "8",
+                    "--sample-count",
+                    "4",
+                ]
+            )
+            payload = read_html_snapshot(archive)
+
+        self.assertEqual(payload["scan"]["hash_algorithm"], sampled_sha256_algorithm(8, 4))
 
     def _run(self, argv: list[str]) -> str:
         """运行一条 CLI 命令并返回去除末尾换行的标准输出。"""

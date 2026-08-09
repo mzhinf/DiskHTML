@@ -53,7 +53,7 @@ Get-FileHash .\build\release\DiskHTML-win-x64.zip -Algorithm SHA256
 - [ ] 运行状态只在任务开始后显示，暂停、继续、取消有效。
 - [ ] 完成区显示完整路径，“打开 HTML”和“打开所在文件夹”有效。
 - [ ] HTML 的目录树、面包屑、搜索、高亮、排序、详情、SHA-256、导出和盘符切换有效。
-- [ ] 比对报告显示 `MATCH/CHANGED/ADDED/MISSING/ERROR`，差异颜色和父目录标记正确。
+- [ ] 比对报告显示 `MATCH/PRECHECK_MATCH/CHANGED/ADDED/MISSING/ERROR`，采样风险提示、状态颜色和父目录标记正确。
 - [ ] Windows 10 与 Windows 11 上均完成一次 ZIP 解压后的验收。
 
 ## 发布归档

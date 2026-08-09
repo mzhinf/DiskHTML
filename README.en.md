@@ -2,14 +2,14 @@
 
 [中文](README.md) | [English](README.en.md)
 
-DiskHTML is a Windows 10/11 directory snapshot and SHA-256 comparison tool. The desktop app only collects inputs, scans directories, and generates reports. Browse directory trees, search, sort, inspect details, and view comparison status in the generated offline HTML.
+DiskHTML is a Windows 10/11 directory snapshot and Hash precheck/comparison tool. It uses full SHA-256 by default and can use a fixed-budget, fixed-count sampled fingerprint for large-file prechecks. A sampled match is not proof of full content equality.
 
 ## Key features
 
 - Create directory snapshots: produce one visual HTML file and a same-named SQLite index.
 - Create comparison reports: choose any directory inside a historical HTML snapshot and compare it with any local directory.
 - Render from SQLite: generate the current HTML format from a historical index without rescanning the source directory.
-- Record Name, Size, Modified, Created, SHA-256, volume details, and optional physical disk details.
+- Record Name, Size, Modified, Created, digest, exact algorithm, volume details, and optional physical disk details.
 - Generated HTML has no external CDN dependency and can be opened, searched, sorted, exported, and switched between Chinese and English offline.
 - The desktop app supports Chinese and English. Use the language selector in the lower-right status bar; switching languages keeps the paths and options already entered.
 

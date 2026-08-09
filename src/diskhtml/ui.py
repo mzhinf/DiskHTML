@@ -14,18 +14,32 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 
 from . import ui_text
-from .config import ScanConfig
+from .config import HashMode, ScanConfig
 from .html_archive import (
     compare_html_directory_to_source,
     create_html_snapshot,
     html_snapshot_directories,
+    html_snapshot_scan_config,
     render_html_snapshot_from_sqlite,
 )
 from .models import ScanProgress
+from .sampled_hash import MAX_SAMPLE_COUNT
 from .scanner import ScanController
 from .version import __version__
 
 TaskEvent = tuple[str, object]
+_MEBIBYTE = 1024 * 1024
+
+
+def _hash_strategy_label(config: ScanConfig) -> str:
+    """返回 GUI 中展示的请求 Hash 策略名称和稳定标识。"""
+
+    label = (
+        ui_text.HASH_MODE_SAMPLED
+        if config.hash_mode is HashMode.SAMPLED
+        else ui_text.HASH_MODE_FULL
+    )
+    return f"{label} ({config.requested_hash_algorithm()})"
 
 
 def _asset_path(name: str) -> Path:
@@ -253,10 +267,10 @@ class MainWindow(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(_window_title())
-        self.geometry("920x700")
+        self.geometry("920x900")
         self.resizable(False, False)
-        self.minsize(920, 700)
-        self.maxsize(920, 700)
+        self.minsize(920, 900)
+        self.maxsize(920, 900)
         icon = _asset_path("folder-tree.ico")
         if icon.is_file():
             try:
@@ -290,6 +304,7 @@ class MainWindow(tk.Tk):
         style.configure("Description.TLabel", background="#ffffff", foreground="#68737d")
         style.configure("FieldTitle.TLabel", font=("Segoe UI", 10, "bold"))
         style.configure("Error.TLabel", foreground="#bb2424")
+        style.configure("Warning.TLabel", foreground="#8a5500")
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(18, 7))
         style.configure("Task.TLabelframe", padding=10)
         style.configure("TNotebook.Tab", padding=(18, 9), font=("Segoe UI", 10))
@@ -326,6 +341,9 @@ class MainWindow(tk.Tk):
             "snapshot_source": self._snapshot_source_var.get(),
             "snapshot_output": self._snapshot_output_var.get(),
             "snapshot_follow": self._snapshot_follow_var.get(),
+            "snapshot_hash_mode": self._snapshot_hash_mode_var.get(),
+            "snapshot_sample_budget_mb": self._snapshot_sample_budget_mb_var.get(),
+            "snapshot_sample_count": self._snapshot_sample_count_var.get(),
             "compare_archive": self._compare_archive_var.get(),
             "compare_source": self._compare_source_var.get(),
             "compare_output": self._compare_output_var.get(),
@@ -342,6 +360,10 @@ class MainWindow(tk.Tk):
         self._snapshot_source_var.set(str(values["snapshot_source"]))
         self._snapshot_output_var.set(str(values["snapshot_output"]))
         self._snapshot_follow_var.set(bool(values["snapshot_follow"]))
+        self._snapshot_hash_mode_var.set(str(values["snapshot_hash_mode"]))
+        self._snapshot_sample_budget_mb_var.set(str(values["snapshot_sample_budget_mb"]))
+        self._snapshot_sample_count_var.set(str(values["snapshot_sample_count"]))
+        self._refresh_snapshot_hash_controls()
         self._compare_archive_var.set(str(values["compare_archive"]))
         self._compare_source_var.set(str(values["compare_source"]))
         self._compare_output_var.set(str(values["compare_output"]))
@@ -470,11 +492,66 @@ class MainWindow(tk.Tk):
             self._choose_snapshot_output,
         )
         self._snapshot_source_var.trace_add("write", self._suggest_snapshot_output)
+        hash_frame = ttk.LabelFrame(page, text=ui_text.HASH_STRATEGY, padding=(10, 6))
+        hash_frame.pack(fill=tk.X, pady=(2, 6))
+        self._snapshot_hash_mode_var = tk.StringVar(value=self._scan_config.hash_mode.value)
+        self._snapshot_sample_budget_mb_var = tk.StringVar(
+            value=str(self._scan_config.sample_budget // _MEBIBYTE)
+        )
+        self._snapshot_sample_count_var = tk.StringVar(value=str(self._scan_config.sample_count))
+        mode_row = ttk.Frame(hash_frame)
+        mode_row.pack(fill=tk.X)
+        ttk.Radiobutton(
+            mode_row,
+            text=ui_text.HASH_MODE_FULL,
+            variable=self._snapshot_hash_mode_var,
+            value=HashMode.FULL.value,
+            command=self._refresh_snapshot_hash_controls,
+        ).pack(side=tk.LEFT)
+        ttk.Radiobutton(
+            mode_row,
+            text=ui_text.HASH_MODE_SAMPLED,
+            variable=self._snapshot_hash_mode_var,
+            value=HashMode.SAMPLED.value,
+            command=self._refresh_snapshot_hash_controls,
+        ).pack(side=tk.LEFT, padx=(18, 0))
+        self._snapshot_sample_frame = ttk.Frame(hash_frame)
+        ttk.Label(self._snapshot_sample_frame, text=ui_text.SAMPLE_BUDGET_MB).pack(side=tk.LEFT)
+        ttk.Entry(
+            self._snapshot_sample_frame,
+            textvariable=self._snapshot_sample_budget_mb_var,
+            width=8,
+        ).pack(side=tk.LEFT, padx=(6, 16))
+        ttk.Label(self._snapshot_sample_frame, text=ui_text.SAMPLE_COUNT).pack(side=tk.LEFT)
+        ttk.Spinbox(
+            self._snapshot_sample_frame,
+            from_=2,
+            to=MAX_SAMPLE_COUNT,
+            textvariable=self._snapshot_sample_count_var,
+            width=6,
+        ).pack(side=tk.LEFT, padx=(6, 0))
+        self._snapshot_hash_warning = ttk.Label(
+            hash_frame, text=ui_text.SAMPLE_WARNING, style="Warning.TLabel"
+        )
+        self._snapshot_hash_error = ttk.Label(hash_frame, text="", style="Error.TLabel")
+        self._refresh_snapshot_hash_controls()
         ttk.Checkbutton(page, text=ui_text.FOLLOW_LINKS, variable=self._snapshot_follow_var).pack(
             anchor=tk.W, pady=(2, 0)
         )
         self._primary_button(page, ui_text.CREATE_SNAPSHOT, self._start_snapshot_from_page)
         return page
+
+    def _refresh_snapshot_hash_controls(self) -> None:
+        """只在采样模式下显示预算、次数和快速预检提示。"""
+
+        sampled = self._snapshot_hash_mode_var.get() == HashMode.SAMPLED.value
+        if sampled:
+            self._snapshot_sample_frame.pack(fill=tk.X, pady=(6, 0))
+            self._snapshot_hash_warning.pack(anchor=tk.W, pady=(4, 0))
+        else:
+            self._snapshot_sample_frame.pack_forget()
+            self._snapshot_hash_warning.pack_forget()
+            self._set_error(self._snapshot_hash_error, "")
 
     def _build_compare_page(self) -> tk.Frame:
         """构建生成比对报告任务页。"""
@@ -484,6 +561,7 @@ class MainWindow(tk.Tk):
         self._compare_source_var = tk.StringVar()
         self._compare_output_var = tk.StringVar()
         self._compare_follow_var = tk.BooleanVar(value=self._scan_config.follow_links)
+        self._compare_hash_strategy_var = tk.StringVar(value=ui_text.HTML_HASH_PENDING)
         self._compare_directory_var = tk.StringVar(
             value=f"{ui_text.SNAPSHOT_DIRECTORY}: {ui_text.SNAPSHOT_ROOT}"
         )
@@ -495,6 +573,9 @@ class MainWindow(tk.Tk):
             ui_text.SELECT_SNAPSHOT,
             self._choose_compare_archive,
         )
+        strategy_frame = ttk.LabelFrame(page, text=ui_text.HTML_HASH_STRATEGY, padding=(10, 6))
+        strategy_frame.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(strategy_frame, textvariable=self._compare_hash_strategy_var).pack(anchor=tk.W)
         self._compare_source, self._compare_source_error = self._field(
             page,
             self._compare_source_var,
@@ -698,11 +779,21 @@ class MainWindow(tk.Tk):
             self._sqlite_output_var.set(str(database.with_name(f"{database.stem}-new.html")))
 
     def _archive_changed(self, *_args: object) -> None:
-        """重置快照内目录并更新输出建议。"""
+        """重置快照内目录，并读取 HTML 指定的 Hash 策略。"""
 
         self._compare_archive_directory = ""
         self._compare_directory_var.set(f"{ui_text.SNAPSHOT_DIRECTORY}: {ui_text.SNAPSHOT_ROOT}")
+        self._compare_hash_strategy_var.set(ui_text.HTML_HASH_PENDING)
         self._suggest_compare_output()
+        value = self._compare_archive_var.get().strip()
+        path = Path(value)
+        if not value or not path.is_file():
+            return
+        try:
+            config = html_snapshot_scan_config(path, self._scan_config)
+        except (OSError, ValueError):
+            return
+        self._compare_hash_strategy_var.set(_hash_strategy_label(config))
 
     def _choose_archived_directory(self) -> None:
         """打开对话框选择需要比较的快照内目录。"""
@@ -750,6 +841,7 @@ class MainWindow(tk.Tk):
             return None
         try:
             html_snapshot_directories(path)
+            html_snapshot_scan_config(path, self._scan_config)
         except (OSError, ValueError) as exc:
             self._set_error(error, f"{ui_text.ARCHIVE_INVALID}: {exc}")
             return None
@@ -789,7 +881,22 @@ class MainWindow(tk.Tk):
         output = self._validate_output(self._snapshot_output_var, self._snapshot_output_error)
         if source is None or output is None or self._active_scan_running():
             return
-        config = replace(self._scan_config, follow_links=self._snapshot_follow_var.get())
+        try:
+            hash_mode = HashMode(self._snapshot_hash_mode_var.get())
+            changes: dict[str, object] = {
+                "follow_links": self._snapshot_follow_var.get(),
+                "hash_mode": hash_mode,
+            }
+            if hash_mode is HashMode.SAMPLED:
+                changes["sample_budget"] = (
+                    int(self._snapshot_sample_budget_mb_var.get()) * _MEBIBYTE
+                )
+                changes["sample_count"] = int(self._snapshot_sample_count_var.get())
+            config = replace(self._scan_config, **changes)
+        except ValueError as exc:
+            self._set_error(self._snapshot_hash_error, str(exc))
+            return
+        self._set_error(self._snapshot_hash_error, "")
         controller = ScanController()
         thread = HtmlSnapshotThread(source, output, config, controller)
         self._begin_task(
@@ -808,7 +915,14 @@ class MainWindow(tk.Tk):
         output = self._validate_output(self._compare_output_var, self._compare_output_error)
         if archive is None or source is None or output is None or self._active_scan_running():
             return
-        config = replace(self._scan_config, follow_links=self._compare_follow_var.get())
+        try:
+            config = html_snapshot_scan_config(
+                archive,
+                replace(self._scan_config, follow_links=self._compare_follow_var.get()),
+            )
+        except (OSError, ValueError) as exc:
+            self._set_error(self._compare_archive_error, f"{ui_text.ARCHIVE_INVALID}: {exc}")
+            return
         controller = ScanController()
         thread = HtmlDirectoryCompareThread(
             archive,

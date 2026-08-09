@@ -1,4 +1,4 @@
-# 配置格式版本；未知版本会被拒绝，避免静默误读。
+# DiskHTML 配置示例。配置格式版本不等同于数据库模式版本。
 format_version = 1
 
 [logging]
@@ -12,4 +12,11 @@ chunk_size = 4194304
 exclude_dirs = ["System Volume Information", "$RECYCLE.BIN"]
 exclude_extensions = [".tmp", ".part"]
 sha512 = false
+# full 计算完整 SHA-256；sampled 仅对超过预算的文件生成快速预检采样指纹。
+hash_mode = "full"
+# 采样读取总预算，单位为字节。
+sample_budget = 8388608
+# 固定采样次数；采样点从文件头到文件尾均匀分布。
+sample_count = 8
+follow_links = false
 retry_count = 1

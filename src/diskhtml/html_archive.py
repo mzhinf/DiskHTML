@@ -8,6 +8,7 @@ import os
 import tempfile
 import time
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -21,7 +22,7 @@ from .scanner import ScanController, Scanner
 from .util import utc_now
 from .version import __version__
 
-_ARCHIVE_FORMAT_VERSION = 1
+_ARCHIVE_FORMAT_VERSION = 2
 _ARCHIVE_DATA_ID = "diskhtml-archive-data"
 _RENDER_LIMIT = 500
 
@@ -67,7 +68,7 @@ def render_html_snapshot_from_sqlite(database_path: Path | str, output_path: Pat
 def compare_html_archives(
     left_path: Path | str, right_path: Path | str, output_path: Path | str
 ) -> Path:
-    """兼容比较两个 HTML 快照，并生成单文件 HTML 报告。"""
+    """比较两个当前格式 HTML 快照，并生成单文件 HTML 报告。"""
     destination = _prepare_destination(output_path)
     left = read_html_snapshot(left_path)
     right = read_html_snapshot(right_path)
@@ -93,13 +94,14 @@ def compare_html_directory_to_source(
     """将 HTML 快照中选定目录与本机目录比较，并生成可视化 HTML 报告。"""
     destination = _prepare_destination(output_path)
     archive = read_html_snapshot(archive_path)
+    scan_options = _scan_config_from_payload(archive, options or ScanConfig())
     directory = _normalize_directory(archived_directory)
     left = _selected_directory_payload(archive, directory)
     with tempfile.TemporaryDirectory(prefix="diskhtml-") as temporary_directory:
         database_path = Path(temporary_directory) / "transient-index.sqlite3"
         with Database(database_path) as database:
             scan_id = Scanner(database, progress_callback).start(
-                Path(source), options or ScanConfig(), controller
+                Path(source), scan_options, controller
             )
             right = _scan_payload(database, scan_id)
     left_identity = _snapshot_identity(archive, archive_path)
@@ -109,6 +111,49 @@ def compare_html_directory_to_source(
     payload = _compare_payload(left, right, left_identity, right_identity)
     _write_archive(destination, payload, _compare_document(payload))
     return destination
+
+
+def html_snapshot_scan_config(
+    path: Path | str,
+    base_config: ScanConfig | None = None,
+) -> ScanConfig:
+    """读取 HTML 请求的 Hash 策略，并合并调用方的非算法扫描设置。"""
+
+    return _scan_config_from_payload(read_html_snapshot(path), base_config or ScanConfig())
+
+
+def _scan_config_from_payload(
+    payload: dict[str, Any],
+    base_config: ScanConfig,
+) -> ScanConfig:
+    """从当前格式快照恢复 Hash 策略，拒绝缺字段或自相矛盾的载荷。"""
+
+    scan = payload.get("scan")
+    if not isinstance(scan, dict):
+        raise ValueError("HTML 快照缺少扫描策略")
+    raw_options = scan.get("options_json")
+    if not isinstance(raw_options, str):
+        raise ValueError("HTML 快照缺少扫描配置")
+    try:
+        values = json.loads(raw_options)
+    except json.JSONDecodeError as exc:
+        raise ValueError("HTML 快照的扫描配置损坏") from exc
+    if not isinstance(values, dict):
+        raise ValueError("HTML 快照的扫描配置格式无效")
+    required_fields = frozenset({"hash_mode", "sample_budget", "sample_count"})
+    missing_fields = sorted(required_fields - values.keys())
+    if missing_fields:
+        raise ValueError(f"HTML 快照缺少 Hash 配置：{', '.join(missing_fields)}")
+    configured = replace(
+        base_config,
+        sha512=False,
+        hash_mode=str(values["hash_mode"]),
+        sample_budget=int(values["sample_budget"]),
+        sample_count=int(values["sample_count"]),
+    )
+    if scan.get("hash_algorithm") != configured.requested_hash_algorithm():
+        raise ValueError("HTML 快照的 Hash 策略与扫描配置不一致")
+    return configured
 
 
 def html_snapshot_directories(path: Path | str) -> tuple[str, ...]:
@@ -208,7 +253,7 @@ def _directories_from_payload(payload: dict[str, Any]) -> tuple[str, ...]:
 
 
 def html_snapshot_directories_from_rows(payload: dict[str, Any]) -> tuple[str, ...]:
-    """基于快照记录产生目录集合，兼容早期不含 directories 的快照。"""
+    """基于当前格式快照记录产生目录集合。"""
 
     directories = {""}
     for row in payload.get("directories", []):
@@ -247,7 +292,7 @@ def read_html_snapshot(path: Path | str) -> dict[str, Any]:
         raise ValueError(f"不是有效的 DiskHTML 快照：{source}")
     payload = parser.payload
     if payload.get("format_version") != _ARCHIVE_FORMAT_VERSION or payload.get("kind") != "scan":
-        raise ValueError(f"不是受支持的 DiskHTML 快照：{source}")
+        raise ValueError(f"DiskHTML HTML 快照格式不兼容，请重新生成：{source}")
     if not isinstance(payload.get("files"), list):
         raise ValueError(f"快照缺少文件清单：{source}")
     return payload
@@ -279,7 +324,7 @@ def _generator_metadata() -> dict[str, str]:
 
 
 def _generator_label(payload: dict[str, Any]) -> str:
-    """生成页面头部的版本标识，并兼容早期不含生成器字段的快照。"""
+    """生成页面头部的产品版本标识。"""
 
     generator = payload.get("generator")
     if isinstance(generator, dict):
@@ -296,6 +341,7 @@ def _snapshot_identity(payload: dict[str, Any], path: Path | str) -> dict[str, A
         "path": str(Path(path)),
         "scan_id": scan.get("id") if isinstance(scan, dict) else None,
         "source_path": scan.get("source_path") if isinstance(scan, dict) else None,
+        "hash_algorithm": scan.get("hash_algorithm") if isinstance(scan, dict) else None,
         "generated_at": payload.get("generated_at"),
     }
 
@@ -398,7 +444,7 @@ def _scan_document(payload: dict[str, Any]) -> str:
 
     return page_header(
         str(payload["scan"]["source_path"]),
-        "文件系统快照，保留 SHA-256 和目录导航。",
+        "文件系统快照，保留具体 Hash 算法、摘要和目录导航。",
         _generator_label(payload),
     ) + tree_document(payload, _initial_table_rows(payload))
 
@@ -408,7 +454,7 @@ def _compare_document(payload: dict[str, Any]) -> str:
 
     return page_header(
         "快照比较",
-        "状态列显示当前目录与快照目录的比较结果。",
+        "状态列区分完整一致、采样预检一致与已变化。",
         _generator_label(payload),
     ) + tree_document(payload, _initial_table_rows(payload))
 
@@ -432,7 +478,7 @@ def _initial_table_rows(payload: dict[str, Any]) -> str:
     compare = payload.get("kind") == "compare"
     entries = payload.get("entries", []) if compare else payload.get("files", [])
     rows = [_fallback_table_row(item, compare) for item in entries if isinstance(item, dict)]
-    return "".join(rows) or '<tr><td colspan="6">当前范围没有文件。</td></tr>'
+    return "".join(rows) or '<tr><td colspan="7">当前范围没有文件。</td></tr>'
 
 
 def _fallback_table_row(item: dict[str, Any], compare: bool) -> str:
@@ -447,13 +493,14 @@ def _fallback_row_values(item: dict[str, Any], compare: bool) -> tuple[object, .
     """统一选择快照或比较条目的静态展示字段。"""
 
     if compare:
-        size, modified, created, digest = _comparison_fallback_values(item)
+        size, modified, created, digest, algorithm = _comparison_fallback_values(item)
         status = str(item.get("status") or "ERROR")
     else:
         size = item.get("size_bytes")
         modified = item.get("modified_time")
         created = item.get("created_time")
         digest = item.get("sha256")
+        algorithm = item.get("hash_algorithm")
         status = ""
     return (
         item.get("relative_path") or "(未命名文件)",
@@ -461,17 +508,18 @@ def _fallback_row_values(item: dict[str, Any], compare: bool) -> tuple[object, .
         modified or "—",
         created or "—",
         digest or "—",
+        algorithm or "—",
         status,
     )
 
 
-def _comparison_fallback_values(item: dict[str, Any]) -> tuple[object, object, object, object]:
+def _comparison_fallback_values(item: dict[str, Any]) -> tuple[object, object, object, object, object]:
     """优先显示比较报告右侧记录，不存在时回退到左侧记录。"""
 
     side = "new" if item.get("new_size_bytes") is not None else "old"
     return tuple(
         item.get(f"{side}_{field}")
-        for field in ("size_bytes", "modified_time", "created_time", "sha256")
+        for field in ("size_bytes", "modified_time", "created_time", "sha256", "hash_algorithm")
     )  # type: ignore[return-value]
 
 

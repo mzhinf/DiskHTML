@@ -13,10 +13,11 @@ from pathlib import Path
 from threading import Event
 from time import monotonic
 
-from .config import ScanConfig
+from .config import HashMode, ScanConfig
 from .database import Database
 from .disk import collect_volume_info
 from .models import ErrorCode, HashStatus, ProgressCallback, ScanProgress, ScanStatus
+from .sampled_hash import FileChangedDuringHashError, sampled_sha256
 from .util import normalized_path_key, relative_display_path, timestamp_to_utc, utc_now
 
 # 保留早期公开名称，后续调用方可以平滑迁移到 ScanConfig。
@@ -112,7 +113,9 @@ class Scanner:
             if path.anchor and path == Path(path.anchor)
             else "DIRECTORY"
         )
-        scan_id = self.database.create_scan(source_type, str(path), asdict(options))
+        scan_id = self.database.create_scan(
+            source_type, str(path), asdict(options), options.requested_hash_algorithm()
+        )
         if source_is_link and not options.follow_links:
             self.database.record_error(
                 scan_id,
@@ -265,7 +268,7 @@ class Scanner:
         if stat is not None:
             counters.known_bytes += stat.st_size
         existing = self.database.get_file(scan_id, path_key)
-        if stat is not None and self._is_reusable(existing, stat):
+        if stat is not None and self._is_reusable(existing, stat, options):
             counters.completed += 1
             counters.bytes_hashed += stat.st_size
             self._notify(scan_id, counters, relative_path, started)
@@ -509,7 +512,7 @@ class Scanner:
         }
 
     @staticmethod
-    def _is_reusable(existing: object, stat: os.stat_result) -> bool:
+    def _is_reusable(existing: object, stat: os.stat_result, options: ScanOptions) -> bool:
         """只有元数据未变化且上次 Hash 成功的文件才可在恢复时复用。"""
 
         return bool(
@@ -517,6 +520,7 @@ class Scanner:
             and existing["hash_status"] == HashStatus.OK
             and existing["size_bytes"] == stat.st_size
             and existing["mtime_ns"] == stat.st_mtime_ns
+            and existing["hash_algorithm"] == options.effective_hash_algorithm(stat.st_size)
         )
 
     def _hash_file(self, path: Path, root: Path, options: ScanOptions) -> dict[str, object]:
@@ -529,13 +533,38 @@ class Scanner:
         for attempt in range(1, options.retry_count + 2):
             try:
                 before = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
-                sha256 = hashlib.sha256()
-                sha512 = hashlib.sha512() if options.sha512 else None
-                with open(_filesystem_path(path), "rb", buffering=0) as handle:
-                    while block := handle.read(options.chunk_size):
-                        sha256.update(block)
-                        if sha512 is not None:
-                            sha512.update(block)
+                hash_algorithm = options.effective_hash_algorithm(before.st_size)
+                if options.hash_mode is HashMode.SAMPLED:
+                    try:
+                        sampled_result = sampled_sha256(
+                            _filesystem_path(path),
+                            sample_budget=options.sample_budget,
+                            sample_count=options.sample_count,
+                        )
+                    except FileChangedDuringHashError:
+                        base = self._base_file_result(
+                            relative_path, path_key, path.name, extension, before, attempt
+                        )
+                        last_result = {
+                            **base,
+                            "hash_algorithm": hash_algorithm,
+                            "hash_status": HashStatus.UNSTABLE,
+                            "error_code": "CHANGED_DURING_HASH",
+                            "error_message": "文件在 Hash 计算期间发生变化。",
+                        }
+                        continue
+                    sha256_digest = sampled_result["digest"].upper()
+                    sha512_digest = None
+                else:
+                    sha256 = hashlib.sha256()
+                    sha512 = hashlib.sha512() if options.sha512 else None
+                    with open(_filesystem_path(path), "rb", buffering=0) as handle:
+                        while block := handle.read(options.chunk_size):
+                            sha256.update(block)
+                            if sha512 is not None:
+                                sha512.update(block)
+                    sha256_digest = sha256.hexdigest().upper()
+                    sha512_digest = sha512.hexdigest().upper() if sha512 is not None else None
                 after = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                 base = self._base_file_result(
                     relative_path, path_key, path.name, extension, before, attempt
@@ -543,6 +572,7 @@ class Scanner:
                 if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
                     last_result = {
                         **base,
+                        "hash_algorithm": hash_algorithm,
                         "hash_status": HashStatus.UNSTABLE,
                         "error_code": "CHANGED_DURING_HASH",
                         "error_message": "文件在 Hash 计算期间发生变化。",
@@ -550,8 +580,9 @@ class Scanner:
                     continue
                 return {
                     **base,
-                    "sha256": sha256.hexdigest().upper(),
-                    "sha512": sha512.hexdigest().upper() if sha512 else None,
+                    "sha256": sha256_digest,
+                    "sha512": sha512_digest,
+                    "hash_algorithm": hash_algorithm,
                     "hash_status": HashStatus.OK,
                     "error_code": None,
                     "error_message": None,
@@ -563,6 +594,7 @@ class Scanner:
                     base = self._base_file_result(
                         relative_path, path_key, path.name, extension, stat, attempt
                     )
+                    hash_algorithm = options.effective_hash_algorithm(stat.st_size)
                 except OSError:
                     base = {
                         "relative_path": relative_path,
@@ -575,10 +607,12 @@ class Scanner:
                         "mtime_ns": None,
                         "attempt_count": attempt,
                     }
+                    hash_algorithm = options.requested_hash_algorithm()
                 return {
                     **base,
                     "sha256": None,
                     "sha512": None,
+                    "hash_algorithm": hash_algorithm,
                     "hash_status": HashStatus.ERROR,
                     "error_code": self._error_code(exc, ErrorCode.READ_ERROR),
                     "error_message": str(exc),

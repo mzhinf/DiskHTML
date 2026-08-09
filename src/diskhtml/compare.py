@@ -8,6 +8,7 @@ from typing import Any
 from .config import ScanConfig
 from .database import Database
 from .models import CompareStatus
+from .sampled_hash import FULL_SHA256_ALGORITHM
 from .scanner import Scanner
 
 _COMPARE_BATCH_SIZE = 1_000
@@ -117,6 +118,7 @@ def _one_sided_entry(row: Any, status: CompareStatus, side: str) -> dict[str, An
         values.update(
             old_size_bytes=row["size_bytes"],
             old_sha256=row["sha256"],
+            old_hash_algorithm=row["hash_algorithm"],
             old_created_time=row["created_time"],
             old_modified_time=row["modified_time"],
         )
@@ -124,6 +126,7 @@ def _one_sided_entry(row: Any, status: CompareStatus, side: str) -> dict[str, An
         values.update(
             new_size_bytes=row["size_bytes"],
             new_sha256=row["sha256"],
+            new_hash_algorithm=row["hash_algorithm"],
             new_created_time=row["created_time"],
             new_modified_time=row["modified_time"],
         )
@@ -131,22 +134,31 @@ def _one_sided_entry(row: Any, status: CompareStatus, side: str) -> dict[str, An
 
 
 def _both_sides_entry(left: Any, right: Any) -> dict[str, Any]:
-    """以可信 SHA256 为最终依据，构造同路径的比较条目。"""
+    """按文件大小、实际算法和可信摘要构造同路径比较条目。"""
 
     trusted = (
         left["hash_status"] == "OK"
         and right["hash_status"] == "OK"
         and left["sha256"] is not None
         and right["sha256"] is not None
+        and left["hash_algorithm"] is not None
+        and right["hash_algorithm"] is not None
     )
     if not trusted:
         status = CompareStatus.ERROR
         message = _untrusted_message(left, right)
-    elif left["sha256"] == right["sha256"]:
+    elif (
+        left["size_bytes"] != right["size_bytes"]
+        or left["hash_algorithm"] != right["hash_algorithm"]
+        or left["sha256"] != right["sha256"]
+    ):
+        status = CompareStatus.CHANGED
+        message = None
+    elif left["hash_algorithm"] == FULL_SHA256_ALGORITHM:
         status = CompareStatus.MATCH
         message = None
     else:
-        status = CompareStatus.CHANGED
+        status = CompareStatus.PRECHECK_MATCH
         message = None
     return {
         "relative_path": right["relative_path"],
@@ -155,6 +167,8 @@ def _both_sides_entry(left: Any, right: Any) -> dict[str, Any]:
         "new_size_bytes": right["size_bytes"],
         "old_sha256": left["sha256"],
         "new_sha256": right["sha256"],
+        "old_hash_algorithm": left["hash_algorithm"],
+        "new_hash_algorithm": right["hash_algorithm"],
         "old_created_time": left["created_time"],
         "new_created_time": right["created_time"],
         "old_modified_time": left["modified_time"],

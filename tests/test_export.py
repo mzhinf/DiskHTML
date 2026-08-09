@@ -11,6 +11,7 @@ from diskhtml.database import Database
 from diskhtml.models import ScanStatus
 from diskhtml.report import export_scan
 from diskhtml.report.exporter import _publish_directory
+from diskhtml.sampled_hash import FULL_SHA256_ALGORITHM
 
 
 class ExportTests(TestCase):
@@ -126,6 +127,7 @@ class ExportTests(TestCase):
                         "modified_time": "2026-07-24T00:00:00Z",
                         "mtime_ns": 0,
                         "sha256": "A" * 64 if status == "OK" else None,
+                        "hash_algorithm": FULL_SHA256_ALGORITHM,
                         "sha512": None,
                         "hash_status": status,
                         "attempt_count": 1,

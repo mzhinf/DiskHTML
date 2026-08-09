@@ -11,6 +11,7 @@ from diskhtml.config import ScanConfig
 from diskhtml.database import Database
 from diskhtml.models import ScanStatus
 from diskhtml.report import export_compare
+from diskhtml.sampled_hash import FULL_SHA256_ALGORITHM, sampled_sha256_algorithm
 from diskhtml.scanner import Scanner
 
 
@@ -56,10 +57,17 @@ class CompareTests(TestCase):
         self.assertEqual(compare["status"], "COMPLETED")
         self.assertEqual(
             json.loads(compare["summary_json"]),
-            {"ADDED": 1, "CHANGED": 1, "ERROR": 2, "MATCH": 3, "MISSING": 1},
+            {
+                "ADDED": 1,
+                "CHANGED": 2,
+                "ERROR": 2,
+                "MATCH": 2,
+                "MISSING": 1,
+                "PRECHECK_MATCH": 0,
+            },
         )
         self.assertEqual(entries["same.txt"]["status"], "MATCH")
-        self.assertEqual(entries["same_hash_size.txt"]["status"], "MATCH")
+        self.assertEqual(entries["same_hash_size.txt"]["status"], "CHANGED")
         self.assertEqual(entries["changed.txt"]["status"], "CHANGED")
         self.assertEqual(entries["missing.txt"]["status"], "MISSING")
         self.assertEqual(entries["added.txt"]["status"], "ADDED")
@@ -79,6 +87,23 @@ class CompareTests(TestCase):
                 with self.assertRaisesRegex(ValueError, "已完成"):
                     compare_scans(database, incomplete, completed)
                 self.assertEqual(tuple(database.iter_scans()).__len__(), 2)
+
+    def test_equal_sampled_fingerprints_are_precheck_matches(self) -> None:
+        """相同采样指纹只能标记为采样预检一致。"""
+
+        algorithm = sampled_sha256_algorithm()
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            with Database(Path(directory) / "archive.sqlite3") as database:
+                left = self._completed_scan(
+                    database, (("large.bin", "A", 10_000_000, "OK"),), algorithm
+                )
+                right = self._completed_scan(
+                    database, (("large.bin", "A", 10_000_000, "OK"),), algorithm
+                )
+                compare_id = compare_scans(database, left, right)
+                entry = next(database.iter_compare_entries(compare_id))
+
+        self.assertEqual(entry["status"], "PRECHECK_MATCH")
 
     def test_export_compare_generates_local_csv_and_report(self) -> None:
         """完成的比较任务应导出 CSV 和不依赖网络的离线报告。"""
@@ -106,7 +131,14 @@ class CompareTests(TestCase):
 
             self.assertEqual(
                 summary["statistics"],
-                {"ADDED": 1, "CHANGED": 0, "ERROR": 0, "MATCH": 1, "MISSING": 1},
+                {
+                    "ADDED": 1,
+                    "CHANGED": 0,
+                    "ERROR": 0,
+                    "MATCH": 1,
+                    "MISSING": 1,
+                    "PRECHECK_MATCH": 0,
+                },
             )
             self.assertEqual({entry["status"] for entry in entries}, {"ADDED", "MATCH", "MISSING"})
             self.assertIn("compare_assets/manifest.js", report)
@@ -170,7 +202,9 @@ class CompareTests(TestCase):
 
     @staticmethod
     def _completed_scan(
-        database: Database, files: tuple[tuple[str, str | None, int, str], ...]
+        database: Database,
+        files: tuple[tuple[str, str | None, int, str], ...],
+        hash_algorithm: str = FULL_SHA256_ALGORITHM,
     ) -> str:
         """创建一个包含指定文件记录的已完成扫描快照。"""
 
@@ -190,6 +224,7 @@ class CompareTests(TestCase):
                         "modified_time": "2026-07-24T00:00:00Z",
                         "mtime_ns": 0,
                         "sha256": seed * 64 if seed is not None else None,
+                        "hash_algorithm": hash_algorithm,
                         "sha512": None,
                         "hash_status": status,
                         "attempt_count": 1,

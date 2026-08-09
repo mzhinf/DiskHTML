@@ -12,6 +12,7 @@ from threading import RLock
 from typing import Any
 
 from .models import CompareStatus, HashStatus, ScanStatus, SourceType, validate_scan_transition
+from .sampled_hash import FULL_SHA256_ALGORITHM
 from .util import utc_now
 
 SCHEMA_VERSION = 3
@@ -83,6 +84,7 @@ _MIGRATION_1 = (
         mtime_ns INTEGER,
         sha256 TEXT,
         sha512 TEXT,
+        hash_algorithm TEXT NOT NULL,
         hash_status TEXT NOT NULL,
         attempt_count INTEGER NOT NULL DEFAULT 0,
         error_code TEXT,
@@ -122,6 +124,8 @@ _MIGRATION_1 = (
         new_size_bytes INTEGER,
         old_sha256 TEXT,
         new_sha256 TEXT,
+        old_hash_algorithm TEXT,
+        new_hash_algorithm TEXT,
         error_message TEXT
     )
     """,
@@ -160,6 +164,11 @@ _REQUIRED_TABLES = frozenset(
         "compare_entries",
     }
 )
+
+_REQUIRED_COLUMNS = {
+    "files": frozenset({"hash_algorithm"}),
+    "compare_entries": frozenset({"old_hash_algorithm", "new_hash_algorithm"}),
+}
 
 
 class Database:
@@ -210,9 +219,9 @@ class Database:
         with self._transaction() as connection:
             connection.execute(_CREATE_SCHEMA_META)
             current_version = self._stored_schema_version(connection)
-            if current_version > SCHEMA_VERSION:
+            if current_version not in {0, SCHEMA_VERSION}:
                 raise RuntimeError(
-                    f"数据库模式版本 {current_version} 新于当前程序支持的版本 {SCHEMA_VERSION}"
+                    f"数据库模式版本 {current_version} 与当前版本 {SCHEMA_VERSION} 不兼容，请重新生成"
                 )
             for version in range(current_version + 1, SCHEMA_VERSION + 1):
                 for statement in MIGRATIONS[version]:
@@ -258,7 +267,13 @@ class Database:
         with writer:
             yield writer
 
-    def create_scan(self, source_type: str, source_path: str, options: dict[str, Any]) -> str:
+    def create_scan(
+        self,
+        source_type: str,
+        source_path: str,
+        options: dict[str, Any],
+        hash_algorithm: str = FULL_SHA256_ALGORITHM,
+    ) -> str:
         """创建等待执行的扫描任务。"""
 
         scan_id = str(uuid.uuid4())
@@ -274,7 +289,7 @@ class Database:
                     source_type,
                     source_path,
                     ScanStatus.PENDING,
-                    "SHA256" + ("+SHA512" if options.get("sha512") else ""),
+                    hash_algorithm,
                     json.dumps(options, ensure_ascii=False, sort_keys=True),
                     now,
                     now,
@@ -562,6 +577,16 @@ class Database:
         if missing:
             raise RuntimeError(f"数据库缺少必要表：{', '.join(missing)}")
 
+        for table, required_columns in _REQUIRED_COLUMNS.items():
+            column_rows = connection.execute(f"PRAGMA table_info({table})")
+            columns = {row["name"] for row in column_rows}
+            missing_columns = sorted(required_columns - columns)
+            if missing_columns:
+                raise RuntimeError(
+                    f"数据库表 {table} 缺少当前版本字段：{', '.join(missing_columns)}；"
+                    "旧数据库不兼容，请重新生成"
+                )
+
 
 class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
     """一次只由一个编排线程持有的 SQLite 批量写入事务。"""
@@ -701,6 +726,7 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
             "mtime_ns",
             "sha256",
             "sha512",
+            "hash_algorithm",
             "hash_status",
             "attempt_count",
             "error_code",
@@ -750,8 +776,9 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
         self._connection.execute(
             """INSERT INTO compare_entries(
                    compare_id, relative_path, status, old_size_bytes, new_size_bytes,
-                   old_sha256, new_sha256, error_message
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   old_sha256, new_sha256, old_hash_algorithm, new_hash_algorithm,
+                   error_message
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 compare_id,
                 item["relative_path"],
@@ -760,6 +787,8 @@ class DatabaseBatch(AbstractContextManager["DatabaseBatch"]):
                 item.get("new_size_bytes"),
                 item.get("old_sha256"),
                 item.get("new_sha256"),
+                item.get("old_hash_algorithm"),
+                item.get("new_hash_algorithm"),
                 item.get("error_message"),
             ),
         )

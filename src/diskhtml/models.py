@@ -41,6 +41,7 @@ class CompareStatus(StrEnum):
     """比较条目的分类。"""
 
     MATCH = "MATCH"
+    PRECHECK_MATCH = "PRECHECK_MATCH"
     CHANGED = "CHANGED"
     ADDED = "ADDED"
     MISSING = "MISSING"
@@ -130,6 +131,7 @@ class FileRecord:
     size_bytes: int | None
     modified_time: str | None
     mtime_ns: int | None
+    hash_algorithm: str
     hash_status: HashStatus
     sha256: str | None = None
     sha512: str | None = None
@@ -147,6 +149,8 @@ class CompareResult:
     new_size_bytes: int | None = None
     old_sha256: str | None = None
     new_sha256: str | None = None
+    old_hash_algorithm: str | None = None
+    new_hash_algorithm: str | None = None
     error_message: str | None = None
 
 

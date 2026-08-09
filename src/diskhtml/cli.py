@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .compare import compare_scans, compare_sources
-from .config import AppConfig, ScanConfig, load_config
+from .config import AppConfig, HashMode, ScanConfig, load_config
 from .database import Database
 from .html_archive import (
     compare_html_archives,
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare_source_parser.add_argument("archived_directory", help="快照中选择的目录；根目录使用 .")
     compare_source_parser.add_argument("source", type=Path, help="本机当前目录")
     compare_source_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
-    _add_scan_options(compare_source_parser)
+    _add_scan_options(compare_source_parser, include_hash_strategy=False)
 
     compare_html_parser = subparsers.add_parser(
         "compare-html", help="比较两个 HTML 快照并生成单文件 HTML 报告"
@@ -135,7 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _add_scan_options(parser: argparse.ArgumentParser) -> None:
+def _add_scan_options(
+    parser: argparse.ArgumentParser, *, include_hash_strategy: bool = True
+) -> None:
     """为扫描类命令添加有界资源和摘要选项。"""
 
     parser.add_argument("--workers", type=int, help="Hash 工作线程数")
@@ -143,6 +145,14 @@ def _add_scan_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--chunk-size", type=int, help="每次读取的字节数")
     parser.add_argument("--sha512", action="store_true", help="额外计算 SHA512")
     parser.add_argument("--follow-links", action="store_true", help="跟随软链接和 Windows 重解析点")
+    if include_hash_strategy:
+        parser.add_argument(
+            "--hash-mode",
+            choices=tuple(mode.value for mode in HashMode),
+            help="SHA-256 计算模式：full 或 sampled",
+        )
+        parser.add_argument("--sample-budget", type=int, help="采样读取总预算，单位为字节")
+        parser.add_argument("--sample-count", type=int, help="固定采样次数，范围为 2 到 32")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -279,11 +289,17 @@ def _import_database(database: Database, source_path: Path, destination_path: Pa
 def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:
     """将命令行覆盖项合并到配置文件的安全默认值。"""
 
+    hash_mode = getattr(args, "hash_mode", None)
+    sample_budget = getattr(args, "sample_budget", None)
+    sample_count = getattr(args, "sample_count", None)
     values = {
         "workers": args.workers if args.workers is not None else defaults.workers,
         "queue_size": args.queue_size if args.queue_size is not None else defaults.queue_size,
         "chunk_size": args.chunk_size if args.chunk_size is not None else defaults.chunk_size,
         "sha512": args.sha512 or defaults.sha512,
+        "hash_mode": HashMode(hash_mode) if hash_mode else defaults.hash_mode,
+        "sample_budget": sample_budget if sample_budget is not None else defaults.sample_budget,
+        "sample_count": sample_count if sample_count is not None else defaults.sample_count,
         "follow_links": args.follow_links or defaults.follow_links,
     }
     return replace(defaults, **values)
