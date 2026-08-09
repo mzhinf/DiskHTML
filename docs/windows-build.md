@@ -7,8 +7,9 @@ DiskHTML 的实际构建器是 Python 和 PyInstaller，不要求 PowerShell。�
 1. 只在项目 `build/` 范围内清理旧产物；
 2. 调用项目 `.venv` 中的 PyInstaller；
 3. 显式生成 `onedir` 目录包；
-4. 检查 `DiskHTML.exe` 与 `_internal`；
-5. 生成可直接分发的 ZIP。
+4. 将 `config.example.toml` 放入 `_internal\config\`；
+5. 检查 `DiskHTML.exe` 与 `_internal`；
+6. 生成可直接分发的 ZIP。
 
 `scripts/build_windows.ps1` 只是可选薄包装，便于已有 PowerShell 操作习惯；它不包含清理、PyInstaller 参数或压缩逻辑。
 
@@ -38,6 +39,7 @@ pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 |---|---|---|
 | 启动程序 | `build\dist\DiskHTML\DiskHTML.exe` | 完整目录包内的入口，不能单独复制 |
 | 运行库 | `build\dist\DiskHTML\_internal\` | Python、Tcl/Tk 和程序依赖 |
+| 配置模板 | `build\dist\DiskHTML\_internal\config\config.example.toml` | 首次启动时复制到 EXE 同目录并更名为 `config.toml` |
 | 发布包 | `build\release\DiskHTML-win-x64.zip` | 应交付给用户的完整便携包 |
 
 ## 自动验收
@@ -51,17 +53,18 @@ pwsh.exe -NoLogo -NoProfile -File .\scripts\build_windows.ps1 -Clean
 .\.venv\Scripts\python.exe .\scripts\verify_release.py .\build\release\DiskHTML-win-x64.zip
 ~~~
 
-发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe` 和 `_internal\python3*.dll`，校验内嵌 `pyproject.toml` 的版本，运行 `--version`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
+发布验证脚本会把 ZIP 解压到独立临时目录，检查 `DiskHTML.exe`、`_internal\python3*.dll` 和内置配置模板，校验内嵌 `pyproject.toml` 的版本，运行 `--version`，确认首次启动生成与模板一致的 `config.toml`，然后用含中文文件名的样本实际生成 HTML 和 SQLite。它验证的是用户收到的 ZIP，而不是直接调用 Python 源码。
 
 ## 人工验收
 
 1. 在空目录完整解压 ZIP，确认只有一个顶层 `DiskHTML` 目录。
-2. 双击 EXE，确认三个任务页为“生成目录快照”“生成比对报告”“从 SQLite 生成”。
-3. 生成含中文、空目录和普通文件的小型快照，在浏览器离线打开。
-4. 从 HTML 中选择一个非根目录，与本机目录生成比对报告。
-5. 检查搜索、排序、目录跳转、SHA-256、状态颜色和文件链接。
-6. 扫描过程中验证暂停、继续、取消；任务完成后验证“打开 HTML”和“打开所在文件夹”。
-7. 在未安装项目 Python 环境的 Windows 10 和 Windows 11 上各验收一次。
+2. 双击 EXE，确认生成同目录 `config.toml`，且再次启动不会覆盖人工修改。
+3. 确认三个任务页为“生成目录快照”“生成比对报告”“从 SQLite 生成”。
+4. 生成含中文、空目录和普通文件的小型快照，在浏览器离线打开。
+5. 从 HTML 中选择一个非根目录，与本机目录生成比对报告。
+6. 检查搜索、排序、目录跳转、SHA-256、状态颜色和文件链接。
+7. 扫描过程中验证暂停、继续、取消；任务完成后验证“打开 HTML”和“打开所在文件夹”。
+8. 在未安装项目 Python 环境的 Windows 10 和 Windows 11 上各验收一次。
 
 ## PowerShell 运行时说明
 

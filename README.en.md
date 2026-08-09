@@ -20,9 +20,12 @@ The release is a portable directory package, not a single EXE that can be copied
 ~~~text
 DiskHTML\DiskHTML.exe
 DiskHTML\_internal\...
+DiskHTML\config.toml (created on first launch)
 ~~~
 
 Keep `DiskHTML.exe` and `_internal` together. Copying only the EXE causes `Failed to load Python DLL`.
+
+The release embeds its default template at `_internal\config\config.example.toml`. On first launch, the EXE copies it to `config.toml` beside `DiskHTML.exe` if that file does not already exist. Later launches preserve user edits. The desktop app and EXE CLI load this file by default; an explicit `--config` path still takes precedence.
 
 The desktop app has three task tabs:
 

@@ -23,7 +23,7 @@
 ## Hash 与可信状态
 
 - `sha256` 在 `hash_status = OK` 时必须存在；其语义由同记录的 `hash_algorithm` 明确区分。
-- `full-sha256` 表示完整 SHA-256；`sampled-sha256-<预算MB>_<次数>` 表示仅供快速预检的采样指纹。
+- `full-sha256` 表示完整 SHA-256；`sampled-sha256-<目标读取量MB>_<次数>` 表示仅供快速预检的采样指纹。
 - `sha512` 可为空，且不能代替 SHA256。
 - `UNSTABLE` 表示 Hash 前后元数据变化；`ERROR` 表示无法读取。
 - 缺少可信 Hash 或算法标识的文件在比较时只能得到 `ERROR`，不能得到一致状态。

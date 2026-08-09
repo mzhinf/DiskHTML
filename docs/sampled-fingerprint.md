@@ -33,7 +33,7 @@ result = sampled_sha256(
 | 字段 | 含义 |
 |---|---|
 | `mode` | `full` 或 `sampled` |
-| `algorithm` | `full-sha256` 或 `sampled-sha256-<预算MB>_<请求次数>` |
+| `algorithm` | `full-sha256` 或 `sampled-sha256-<目标读取量MB>_<请求次数>` |
 | `digest` | 小写十六进制 SHA-256 |
 | `file_size` | 计算前读取的文件大小 |
 | `sample_target_bytes` | 目标采样读取量，单位为字节 |

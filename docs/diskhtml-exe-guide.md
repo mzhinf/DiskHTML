@@ -4,6 +4,8 @@
 
 完整发布包是 `DiskHTML-win-x64.zip`。完整解压后运行 `DiskHTML\DiskHTML.exe`，不需要安装 Python。`DiskHTML.exe` 必须与旁边的 `_internal` 保持在同一目录；只复制 EXE 会出现 `Failed to load Python DLL`。
 
+发布包在 `_internal\config\config.example.toml` 保存默认配置模板。首次启动 `DiskHTML.exe` 时，如果 EXE 同目录没有 `config.toml`，程序会复制模板生成该文件。后续启动不会覆盖已有配置。桌面界面和 EXE 命令默认读取 `config.toml`；命令行可在子命令前使用 `--config 路径` 临时指定其他配置。
+
 无参数启动固定大小的桌面生成界面。顶部有三个任务页：
 
 - 生成目录快照；
@@ -16,7 +18,7 @@
 
 1. 打开“生成目录快照”页。
 2. 选择源目录。程序自动建议 `目录名_yy-mm-dd.html`。
-3. 选择完整 SHA-256，或选择仅供快速预检的采样模式并设置预算与固定采样次数。
+3. 选择完整 SHA-256，或选择仅供快速预检的采样模式并设置目标采样读取量与固定采样次数。
 4. 如有需要，更改输出位置并启用“跟随软链接和 Windows 重解析点”。
 5. 点击“生成快照 HTML”。
 6. 完成后会得到同名 `.html` 和 `.sqlite3`，并可打开 HTML 或所在文件夹。
@@ -33,6 +35,12 @@ PowerShell 中需要当前路径前缀：
 
 ~~~powershell
 .\DiskHTML.exe snapshot F:\Documents .\资料快照.html
+~~~
+
+显式配置示例：
+
+~~~powershell
+.\DiskHTML.exe --config .\其他配置.toml snapshot F:\Documents .\资料快照.html
 ~~~
 
 输出 HTML 和同名 SQLite 均不能已存在，程序不会覆盖历史结果。

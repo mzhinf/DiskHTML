@@ -40,7 +40,9 @@ Get-FileHash .\build\dist\DiskHTML\DiskHTML.exe -Algorithm SHA256
 Get-FileHash .\build\release\DiskHTML-win-x64.zip -Algorithm SHA256
 ~~~
 
-- [ ] ZIP 只有一个 `DiskHTML/` 顶层目录，并包含 `DiskHTML.exe` 与 `_internal/python3*.dll`。
+- [ ] ZIP 只有一个 `DiskHTML/` 顶层目录，并包含 `DiskHTML.exe`、`_internal/python3*.dll` 与 `_internal/config/config.example.toml`。
+- [ ] 首次运行 EXE 在同目录生成与模板一致的 `config.toml`，再次运行不覆盖用户修改。
+- [ ] GUI 与 EXE CLI 默认读取同目录 `config.toml`，显式 `--config` 优先。
 - [ ] 独立解压验证实际生成含中文数据的 HTML 和同名 SQLite。
 - [ ] 发布页面和下载说明明确“完整解压 ZIP，不能单独复制 EXE”。
 - [ ] 记录 Python、PyInstaller、Tcl/Tk、Windows 版本、文件大小和 SHA-256。
@@ -48,6 +50,7 @@ Get-FileHash .\build\release\DiskHTML-win-x64.zip -Algorithm SHA256
 ## Windows 人工验收
 
 - [ ] “生成目录快照”自动建议 `名称_yy-mm-dd.html`，并生成同名 SQLite。
+- [ ] 修改 `config.toml` 后，GUI 初始扫描选项与无 `--config` 的 EXE 命令使用修改值。
 - [ ] “生成比对报告”可选择基准 HTML、快照内任意目录、本机目录和输出 HTML。
 - [ ] “从 SQLite 生成”不重新扫描即可生成新 HTML。
 - [ ] 运行状态只在任务开始后显示，暂停、继续、取消有效。

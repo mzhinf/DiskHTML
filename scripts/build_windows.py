@@ -113,6 +113,9 @@ def build_windows(project_root: Path, *, clean: bool = False) -> tuple[Path, Pat
         f"{assets}{os.pathsep}diskhtml/assets",
         "--add-data",
         f"{root / 'pyproject.toml'}{os.pathsep}.",
+        # onedir 会把数据文件放入 _internal；该子目录供 EXE 首次启动复制默认配置。
+        "--add-data",
+        f"{root / 'config.example.toml'}{os.pathsep}config",
         "--paths",
         str(root / "src"),
         "--distpath",

@@ -5,7 +5,9 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
+from diskhtml.config import load_config
 from diskhtml.exe_cli import main
 
 
@@ -54,3 +56,58 @@ class ExeCliTests(TestCase):
             with redirect_stderr(error):
                 self.assertEqual(main(["snapshot", str(source), str(output)]), 2)
             self.assertIn("输出 HTML 已存在", error.getvalue())
+
+    def test_default_config_is_loaded_and_explicit_config_overrides_it(self) -> None:
+        """EXE 同目录配置默认生效，显式 --config 应保持更高优先级。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            example = Path(__file__).parents[1] / "config.example.toml"
+            original = example.read_text(encoding="utf-8")
+            example_workers = load_config(example).scan.workers
+            default_workers = example_workers + 1
+            explicit_workers = example_workers + 2
+            default_config = root / "config.toml"
+            explicit_config = root / "explicit.toml"
+            default_config.write_text(
+                original.replace(
+                    f"workers = {example_workers}",
+                    f"workers = {default_workers}",
+                ),
+                encoding="utf-8",
+            )
+            explicit_config.write_text(
+                original.replace(
+                    f"workers = {example_workers}",
+                    f"workers = {explicit_workers}",
+                ),
+                encoding="utf-8",
+            )
+            source = root / "source"
+            source.mkdir()
+            output = root / "snapshot.html"
+
+            with patch("diskhtml.exe_cli.create_html_snapshot", return_value=output) as create:
+                self.assertEqual(
+                    main(
+                        ["snapshot", str(source), str(output)],
+                        default_config=default_config,
+                    ),
+                    0,
+                )
+                self.assertEqual(default_workers, create.call_args.args[2].workers)
+
+                self.assertEqual(
+                    main(
+                        [
+                            "--config",
+                            str(explicit_config),
+                            "snapshot",
+                            str(source),
+                            str(output),
+                        ],
+                        default_config=default_config,
+                    ),
+                    0,
+                )
+                self.assertEqual(explicit_workers, create.call_args.args[2].workers)

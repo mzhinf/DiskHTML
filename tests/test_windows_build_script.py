@@ -36,6 +36,8 @@ class WindowsBuildScriptTests(TestCase):
         self.assertIn('"--icon"', script)
         self.assertIn('"--add-data"', script)
         self.assertIn('assets / "folder-tree.ico"', script)
+        self.assertIn("root / 'config.example.toml'", script)
+        self.assertIn("os.pathsep}config", script)
         self.assertNotIn("PySide6", script)
         self.assertNotIn("QSvgRenderer", script)
 

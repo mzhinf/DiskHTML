@@ -49,6 +49,25 @@ class UiTests(TestCase):
         self.assertEqual(self.window.minsize(), self.window.maxsize())
         self.assertTrue(all(self.window._tabs.tab(tab, "image") for tab in tabs))
 
+    def test_supplied_scan_config_initializes_snapshot_controls(self) -> None:
+        """EXE 默认配置应初始化 GUI 的 Hash、采样和链接控件。"""
+
+        configured = ScanConfig(
+            hash_mode=HashMode.SAMPLED,
+            sample_target_bytes=16 * 1024 * 1024,
+            sample_count=12,
+            follow_links=True,
+        )
+        self.window._close_window()
+        self.window = MainWindow(configured)
+        self.window.withdraw()
+        self.window.update_idletasks()
+
+        self.assertEqual(HashMode.SAMPLED.value, self.window._snapshot_hash_mode_var.get())
+        self.assertEqual("16", self.window._snapshot_sample_target_mb_var.get())
+        self.assertEqual("12", self.window._snapshot_sample_count_var.get())
+        self.assertTrue(self.window._snapshot_follow_var.get())
+
     def test_fixed_window_contains_worst_case_task_layout(self) -> None:
         """采样选项、错误提示和运行区展开后仍应留有安全边距。"""
 

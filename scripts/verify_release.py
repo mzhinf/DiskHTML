@@ -26,7 +26,7 @@ def _validate_archive_members(archive: zipfile.ZipFile) -> None:
 
 
 def _validate_runtime_layout(package: Path) -> None:
-    """确认最终发布包包含 Tkinter 且完全不含 Qt 运行时。"""
+    """确认发布包包含 Tkinter、默认配置且完全不含 Qt 运行时。"""
 
     internal = package / "_internal"
     runtime_dlls = tuple(sorted(internal.glob("python3*.dll")))
@@ -34,8 +34,13 @@ def _validate_runtime_layout(package: Path) -> None:
         names = ", ".join(path.name for path in runtime_dlls)
         raise RuntimeError(f"发布包包含多个 Python 运行时 DLL：{names}")
 
-    required_files = (internal / "_tkinter.pyd",)
-    missing = [item.name for item in required_files if not item.is_file()]
+    required_files = (
+        internal / "_tkinter.pyd",
+        internal / "config" / "config.example.toml",
+    )
+    missing = [
+        item.relative_to(internal).as_posix() for item in required_files if not item.is_file()
+    ]
     if not runtime_dlls:
         missing.append("python3*.dll")
     if not any(internal.glob("tcl*.dll")):
@@ -55,6 +60,17 @@ def _validate_runtime_layout(package: Path) -> None:
     ]
     if qt_paths:
         raise RuntimeError("Tkinter 发布包仍包含 Qt 文件：" + ", ".join(sorted(qt_paths)))
+
+
+def _validate_default_config_copy(package: Path) -> None:
+    """确认首次启动生成了与内置模板一致的外部配置。"""
+
+    template = package / "_internal" / "config" / "config.example.toml"
+    external = package / "config.toml"
+    if not external.is_file():
+        raise RuntimeError("DiskHTML.exe 首次启动后未生成 config.toml")
+    if external.read_bytes() != template.read_bytes():
+        raise RuntimeError("首次生成的 config.toml 与内置模板不一致")
 
 
 def verify_release(archive_path: Path) -> None:
@@ -79,6 +95,7 @@ def verify_release(archive_path: Path) -> None:
         verify_license_bundle(package)
 
         subprocess.run([str(executable), "--version"], check=True, timeout=60)
+        _validate_default_config_copy(package)
         source = extracted / "样本目录"
         source.mkdir()
         (source / "中文.txt").write_text("DiskHTML release smoke test\n", encoding="utf-8")

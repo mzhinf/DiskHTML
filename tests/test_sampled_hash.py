@@ -149,7 +149,7 @@ class SampledSha256Tests(TestCase):
         self.assertNotEqual(first["digest"], second["digest"])
 
     def test_invalid_parameters_raise_clear_errors(self) -> None:
-        """预算和次数的类型、下界及上界都应明确拒绝。"""
+        """目标读取量和次数的类型、下界及上界都应明确拒绝。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             path = Path(directory) / "input.bin"

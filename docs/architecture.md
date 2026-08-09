@@ -14,6 +14,7 @@ DiskHTML 包含两个明确分离的界面：
 | 入口或模块 | 职责 | 主要依赖/被谁调用 |
 |---|---|---|
 | `scripts/gui_entry.py` | PyInstaller 发布入口；无参数进入桌面 UI，有参数进入 EXE CLI | `ui`、`exe_cli` |
+| `src/diskhtml/_exe_config.py` | 从 `_internal/config` 定位模板，首次启动生成并保留 EXE 同目录默认配置 | `gui_entry`、PyInstaller 运行时 |
 | `src/diskhtml/__main__.py` | `python -m diskhtml` 的高级 CLI 入口 | `cli` |
 | `src/diskhtml/ui.py` | 基于 `tkinter/ttk` 的三任务桌面界面、字段校验、后台线程、运行状态与中英文切换 | Python 标准库、`ui_text`、`html_archive`、`scanner`、`config` |
 | `src/diskhtml/ui_text.py` | 桌面界面中英文文案、当前语言状态与兼容常量访问 | `ui` |
@@ -68,6 +69,7 @@ DiskHTML 包含两个明确分离的界面：
 | 采样指纹 | 写入 `sha256` 摘要列并由 `hash_algorithm` 明确标识，仅用于大文件快速预检，不作为完整内容一致性证明 |
 | 产品版本 | 唯一来源为 `pyproject.toml` 的 `project.version`；HTML 使用 `generator` 记录生成版本，EXE 写入 Windows 文件版本资源 |
 | EXE 发布 | PyInstaller `onedir`；发布 ZIP 内只有完整 `DiskHTML/` 顶层目录；不能单独复制 EXE |
+| EXE 默认配置 | `_internal/config/config.example.toml` 是只读模板；首次启动生成同目录 `config.toml`，已有文件不覆盖；GUI 和 EXE CLI 默认读取 |
 | PowerShell | 不参与构建核心；运行时仅用于补充物理磁盘型号、序列号和分区，失败时降级记录 |
 
 ## 依赖边界

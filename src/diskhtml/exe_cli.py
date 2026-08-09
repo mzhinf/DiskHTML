@@ -17,15 +17,20 @@ from .html_archive import (
 )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """构建仅包含 HTML 快照工作流的 EXE 参数解析器。"""
+def build_parser(default_config: Path | None = None) -> argparse.ArgumentParser:
+    """构建 EXE 参数解析器；显式 ``--config`` 优先于注入的默认路径。"""
 
     parser = argparse.ArgumentParser(
         prog="DiskHTML",
         description="生成和比较可离线打开的 HTML 快照。",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--config", type=Path, help="TOML 扫描配置文件")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=default_config,
+        help="TOML 扫描配置文件",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     snapshot = commands.add_parser("snapshot", help="扫描目录或文件并生成单文件 HTML 快照")
@@ -46,10 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    default_config: Path | None = None,
+) -> int:
     """执行 EXE 支持的 HTML 快照或 HTML 比较命令。"""
 
-    args = build_parser().parse_args(argv)
+    args = build_parser(default_config).parse_args(argv)
     try:
         config = load_config(args.config)
         if args.command == "snapshot":

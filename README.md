@@ -20,9 +20,12 @@ DiskHTML 是面向 Windows 10/11 的目录快照与 Hash 预检/比对工具。�
 ~~~text
 DiskHTML\DiskHTML.exe
 DiskHTML\_internal\...
+DiskHTML\config.toml（首次启动后生成）
 ~~~
 
 `DiskHTML.exe` 和 `_internal` 必须保持在同一目录。只复制 EXE 会出现 `Failed to load Python DLL`。
+
+发布包在 `_internal\config\config.example.toml` 内置默认模板。首次启动 EXE 时，如果同目录还没有 `config.toml`，程序会复制模板生成该文件；后续启动不会覆盖用户修改。桌面界面和 EXE 命令行默认读取它，显式 `--config` 仍可指定其他配置。
 
 桌面界面包含三个任务页：
 

@@ -3,8 +3,9 @@
 import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import patch, sentinel
 
 
 def _load_entry_module():
@@ -25,13 +26,18 @@ class GuiEntryTests(TestCase):
         """用户输入 snapshot 参数时应进入精简命令行入口。"""
 
         entry = _load_entry_module()
+        config_path = Path("F:/DiskHTML/config.toml")
         with (
+            patch.object(entry, "ensure_exe_config", return_value=config_path),
             patch.object(entry, "command_main", return_value=0) as command_main,
             patch.object(entry, "gui_main", return_value=0) as gui_main,
         ):
             self.assertEqual(entry.main(["snapshot", "F:\\Documents", ".\\资料快照.html"]), 0)
 
-        command_main.assert_called_once_with(["snapshot", "F:\\Documents", ".\\资料快照.html"])
+        command_main.assert_called_once_with(
+            ["snapshot", "F:\\Documents", ".\\资料快照.html"],
+            default_config=config_path,
+        )
         gui_main.assert_not_called()
 
     def test_backup_argument_generates_html_through_entry(self) -> None:
@@ -51,11 +57,19 @@ class GuiEntryTests(TestCase):
         """双击 EXE 时应仍启动图形界面。"""
 
         entry = _load_entry_module()
+        config_path = Path("F:/DiskHTML/config.toml")
         with (
+            patch.object(entry, "ensure_exe_config", return_value=config_path),
+            patch.object(
+                entry,
+                "load_config",
+                return_value=SimpleNamespace(scan=sentinel.scan_config),
+            ) as load_config,
             patch.object(entry, "command_main", return_value=0) as command_main,
             patch.object(entry, "gui_main", return_value=0) as gui_main,
         ):
             self.assertEqual(entry.main([]), 0)
 
-        gui_main.assert_called_once_with()
+        load_config.assert_called_once_with(config_path)
+        gui_main.assert_called_once_with(sentinel.scan_config)
         command_main.assert_not_called()

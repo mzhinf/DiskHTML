@@ -1,4 +1,30 @@
-"""DiskHTML 的 Tkinter/ttk HTML 快照桌面生成界面。"""
+"""DiskHTML 的 Tkinter/ttk HTML 快照桌面生成界面。
+
+界面整体只有一张主窗 ``MainWindow``，由 ``main()`` 启动 ``mainloop``：
+
+    ┌──────────────────────────────── MainWindow (920x900) ────────────────────────────────┐
+    │  ┌── content（背景 #f5f6f7）──────────────────────────────────────────────────────┐ │
+    │  │ ┌── Tabs（ttk.Notebook）────────────────────────────────────────────────────┐ │ │
+    │  │ │  Tab 1: 生成目录快照      Tab 2: 生成比对报告      Tab 3: 从 SQLite 生成   │ │ │
+    │  │ │  每个 Tab 页：标题 + 描述 + 路径字段 + 任务选项 + 主按钮                    │ │ │
+    │  │ └──────────────────────────────────────────────────────────────────────────┘ │ │
+    │  │ ┌── _run_panel（运行时显示）───────────────────────────────────────────────┐ │ │
+    │  │ │  当前阶段 / 正在处理路径 / 已扫描文件数 / Hash 进度 / 进度条 / 任务控制    │ │ │
+    │  │ └──────────────────────────────────────────────────────────────────────────┘ │ │
+    │  │ ┌── _result_panel（任务完成后显示）─────────────────────────────────────────┐ │ │
+    │  │ │  输出 HTML 路径（只读 Entry） + 打开 HTML + 打开所在文件夹                  │ │ │
+    │  │ └──────────────────────────────────────────────────────────────────────────┘ │ │
+    │  └──────────────────────────────────────────────────────────────────────────────┘ │
+    │  ┌── status_frame（永远在底部）──────────────────────────────────────────────────┐ │
+    │  │  左侧：状态文字（如「就绪」「任务失败」）   右侧：语言标签 + 语言 Combobox     │ │
+    │  └──────────────────────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────────────────────┘
+
+后台扫描与 Hash 工作交给 ``BackgroundTask`` 体系（``HtmlSnapshotThread``、
+``SqliteHtmlRenderThread``、``HtmlDirectoryCompareThread``）。工作线程只通过
+``queue.Queue`` 发送 ``progress``、``completed`` 和 ``failed`` 事件，Tk 主线程
+使用 ``after`` 轮询并更新控件，避免工作线程直接访问 Tk，使长任务期间界面保持响应。
+"""
 
 from __future__ import annotations
 
@@ -262,9 +288,20 @@ def _window_title() -> str:
 
 
 class MainWindow(tk.Tk):
-    """只负责配置并执行 HTML 生成任务的主窗口。"""
+    """配置并执行三个 HTML 工作流的主窗口。
 
-    def __init__(self) -> None:
+    窗口固定为 920×900，整体分为上下两段：
+
+    - 顶部 ``_content`` 占满可用高度，包含三个任务页签，以及按运行状态显示的
+      ``_run_panel`` 和 ``_result_panel``。
+    - 底部 ``_status_frame`` 始终可见，左侧显示状态，右侧提供语言选择。
+
+    每个页签只收集输入并触发任务；真正的扫描、进度和完成反馈统一使用共享
+    面板。窗口同一时刻只允许一个后台任务，避免进度、控制器和完成回调相互
+    覆盖。可选的 ``scan_config`` 用于初始化 Hash、采样和链接选项。
+    """
+
+    def __init__(self, scan_config: ScanConfig | None = None) -> None:
         super().__init__()
         self.title(_window_title())
         self.geometry("920x900")
@@ -277,7 +314,7 @@ class MainWindow(tk.Tk):
                 self.iconbitmap(default=str(icon))
             except tk.TclError:
                 pass
-        self._scan_config = ScanConfig()
+        self._scan_config = scan_config or ScanConfig()
         self._compare_archive_directory = ""
         self._last_output: Path | None = None
         self._active_scan_thread: BackgroundTask | None = None
@@ -310,7 +347,13 @@ class MainWindow(tk.Tk):
         style.configure("TNotebook.Tab", padding=(18, 9), font=("Segoe UI", 10))
 
     def _setup_language_selector(self) -> None:
-        """创建底部状态栏和语言选择控件。"""
+        """创建固定在窗口底部的状态栏和语言选择控件。
+
+        ``_status_frame`` 使用 ``BOTTOM`` 和 ``fill=X`` 固定在底部。横向顺序为：
+        可扩展的状态文字、语言标签、只读语言 ``Combobox``。任务运行期间语言
+        选择器会切换为 ``disabled``，避免扫描中途重建表单；任务成功或失败后
+        恢复为 ``readonly``。
+        """
 
         self._status_frame = ttk.Frame(self, padding=(10, 5))
         self._status_frame.pack(side=tk.BOTTOM, fill=tk.X)
@@ -393,7 +436,18 @@ class MainWindow(tk.Tk):
         self._show_status(ui_text.READY)
 
     def _setup_central_content(self) -> None:
-        """构建任务页签及共享运行区域。"""
+        """构建任务页签及共享运行、结果区域。
+
+        ``_content`` 位于窗口顶部并占满剩余空间，内部从上到下依次为：
+
+        1. ``_tabs``：始终显示且撑满剩余空间，包含快照、比对和 SQLite 三页。
+        2. ``_run_panel``：构建后默认隐藏，仅在任务运行时显示进度和控制按钮。
+        3. ``_result_panel``：构建后默认隐藏，仅在任务成功后显示输出操作。
+
+        共享容器由此覆盖空闲、运行中和运行完成三种状态。切换语言时会整体
+        重建本区域，因此显示文本统一来自 ``ui_text``；调用方在重建前后分别
+        保存和恢复表单状态。
+        """
 
         previous = getattr(self, "_content", None)
         if previous is not None:
@@ -469,7 +523,20 @@ class MainWindow(tk.Tk):
         )
 
     def _build_snapshot_page(self) -> tk.Frame:
-        """构建生成目录快照任务页。"""
+        """构建目录快照页，并用注入配置初始化 Hash 与链接选项。
+
+        页面以 ``_page_frame`` 提供标题和描述，随后按视觉顺序装配：
+
+        1. 源目录字段：``Entry``、选择目录按钮、帮助文字和错误标签。
+        2. 输出 HTML 字段：``Entry``、更改位置按钮、帮助文字和错误标签。
+        3. Hash 策略区域：完整/采样 ``Radiobutton``；采样模式额外显示目标读取量
+           ``Entry``、采样次数 ``Spinbox``、快速预检警告和校验错误。
+        4. 跟随软链接和 Windows 重解析点的 ``Checkbutton``。
+        5. 位于右下角的“生成快照 HTML”主按钮。
+
+        所有输入通过 ``StringVar`` 或 ``BooleanVar`` 保存，使语言切换重建页面时
+        可以恢复用户尚未提交的表单内容。
+        """
 
         page = self._page_frame(ui_text.SNAPSHOT_HEADING, ui_text.SNAPSHOT_DESCRIPTION)
         self._snapshot_source_var = tk.StringVar()
@@ -545,7 +612,7 @@ class MainWindow(tk.Tk):
         return page
 
     def _refresh_snapshot_hash_controls(self) -> None:
-        """只在采样模式下显示预算、次数和快速预检提示。"""
+        """只在采样模式下显示目标读取量、次数和快速预检提示。"""
 
         sampled = self._snapshot_hash_mode_var.get() == HashMode.SAMPLED.value
         if sampled:
@@ -1142,9 +1209,9 @@ class MainWindow(tk.Tk):
         self.destroy()
 
 
-def main() -> int:
+def main(scan_config: ScanConfig | None = None) -> int:
     """启动 DiskHTML 桌面生成界面。"""
 
-    window = MainWindow()
+    window = MainWindow(scan_config)
     window.mainloop()
     return 0
