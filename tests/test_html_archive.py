@@ -46,6 +46,7 @@ class HtmlArchiveTests(TestCase):
             payload = read_html_snapshot(old_archive)
             archive_text = old_archive.read_text(encoding="utf-8")
             comparison_text = comparison.read_text(encoding="utf-8")
+            expected_comparison_title = f"{old_source} ↔ {new_source}"
             comparison_exists = comparison.is_file()
 
         self.assertEqual(payload["kind"], "scan")
@@ -105,6 +106,9 @@ class HtmlArchiveTests(TestCase):
         self.assertIn("function applyLanguage(next)", archive_text)
         self.assertIn("Switch to Chinese", archive_text)
         self.assertIn("statusLabel(row.status)", comparison_text)
+        self.assertIn(expected_comparison_title, comparison_text)
+        self.assertIn("payload.report_title", comparison_text)
+        self.assertNotIn(":t('status')", comparison_text)
         self.assertIn('id="export-view"', archive_text)
         self.assertIn("appendHighlighted", archive_text)
         self.assertIn("matchesSearch", archive_text)
@@ -174,9 +178,11 @@ class HtmlArchiveTests(TestCase):
             )
             text = comparison.read_text(encoding="utf-8")
             directories = html_snapshot_directories(archive)
+            expected_comparison_title = f"{historical / 'selected'} ↔ {current}"
 
         self.assertIn("selected", directories)
         self.assertIn('"selected_directory":"selected"', text)
+        self.assertIn(expected_comparison_title, text)
         self.assertIn('"MATCH":1', text)
         self.assertIn('"CHANGED":1', text)
         self.assertIn('"ADDED":1', text)

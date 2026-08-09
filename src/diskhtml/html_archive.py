@@ -179,6 +179,7 @@ def _compare_payload(
         "kind": "compare",
         "generator": _generator_metadata(),
         "generated_at": utc_now(),
+        "report_title": _comparison_title(left_identity, right_identity),
         "left": left_identity,
         "right": right_identity,
         "left_volume": left.get("volume"),
@@ -187,6 +188,39 @@ def _compare_payload(
         "directories": _merge_directories(left, right),
         "entries": entries,
     }
+
+
+def _comparison_title(
+    left_identity: dict[str, Any],
+    right_identity: dict[str, Any],
+) -> str:
+    """返回由基准路径和当前路径组成的比较报告标题。"""
+
+    left = _identity_display_path(left_identity, include_selected_directory=True)
+    right = _identity_display_path(right_identity, include_selected_directory=False)
+    if left and right:
+        return f"{left} ↔ {right}"
+    return left or right
+
+
+def _identity_display_path(
+    identity: dict[str, Any],
+    *,
+    include_selected_directory: bool,
+) -> str:
+    """优先返回扫描源路径，并在基准侧附加所选快照子目录。"""
+
+    source = str(identity.get("source_path") or "")
+    display = source or str(identity.get("path") or "")
+    selected = str(identity.get("selected_directory") or "")
+    if not include_selected_directory or not source or not selected or selected == "根目录":
+        return display
+    separator = "\\" if "\\" in source else "/"
+    relative = selected.strip("\\/").replace("\\", separator).replace("/", separator)
+    if not relative:
+        return display
+    base = source.rstrip("\\/")
+    return f"{base}{separator}{relative}"
 
 
 def _merge_directories(left: dict[str, Any], right: dict[str, Any]) -> list[dict[str, Any]]:
@@ -453,7 +487,7 @@ def _compare_document(payload: dict[str, Any]) -> str:
     """生成与快照浏览页一致、额外显示状态列的比较报告。"""
 
     return page_header(
-        "快照比较",
+        str(payload.get("report_title") or "快照比较"),
         "状态列区分完整一致、采样预检一致与已变化。",
         _generator_label(payload),
     ) + tree_document(payload, _initial_table_rows(payload))
