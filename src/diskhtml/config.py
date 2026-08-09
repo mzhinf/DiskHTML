@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .sampled_hash import (
-    DEFAULT_SAMPLE_BUDGET,
     DEFAULT_SAMPLE_COUNT,
+    DEFAULT_SAMPLE_TARGET_BYTES,
     FULL_SHA256_ALGORITHM,
     sampled_sha256_algorithm,
 )
@@ -37,7 +37,7 @@ class ScanConfig:
     exclude_extensions: tuple[str, ...] = field(default_factory=tuple)
     sha512: bool = False
     hash_mode: HashMode = HashMode.FULL
-    sample_budget: int = DEFAULT_SAMPLE_BUDGET
+    sample_target_bytes: int = DEFAULT_SAMPLE_TARGET_BYTES
     sample_count: int = DEFAULT_SAMPLE_COUNT
     follow_links: bool = False
     retry_count: int = 1
@@ -50,7 +50,7 @@ class ScanConfig:
         except ValueError as exc:
             raise ValueError(f"不支持的 Hash 模式：{self.hash_mode}") from exc
         object.__setattr__(self, "hash_mode", hash_mode)
-        sampled_sha256_algorithm(self.sample_budget, self.sample_count)
+        sampled_sha256_algorithm(self.sample_target_bytes, self.sample_count)
         if hash_mode is HashMode.SAMPLED and self.sha512:
             raise ValueError("采样 Hash 模式不能同时计算完整 SHA-512")
         if self.workers < 1:
@@ -66,7 +66,7 @@ class ScanConfig:
         """返回扫描任务请求并写入快照的算法策略标识。"""
 
         if self.hash_mode is HashMode.SAMPLED:
-            return sampled_sha256_algorithm(self.sample_budget, self.sample_count)
+            return sampled_sha256_algorithm(self.sample_target_bytes, self.sample_count)
         return FULL_SHA256_ALGORITHM
 
     def effective_hash_algorithm(self, file_size: int) -> str:
@@ -74,8 +74,8 @@ class ScanConfig:
 
         if file_size < 0:
             raise ValueError("文件大小不能为负数")
-        if self.hash_mode is HashMode.SAMPLED and file_size > self.sample_budget:
-            return sampled_sha256_algorithm(self.sample_budget, self.sample_count)
+        if self.hash_mode is HashMode.SAMPLED and file_size > self.sample_target_bytes:
+            return sampled_sha256_algorithm(self.sample_target_bytes, self.sample_count)
         return FULL_SHA256_ALGORITHM
 
 
@@ -125,7 +125,9 @@ def _parse_config(raw: dict[str, Any]) -> AppConfig:
         exclude_extensions=tuple(str(item) for item in scan_values.get("exclude_extensions", [])),
         sha512=bool(scan_values.get("sha512", False)),
         hash_mode=HashMode(str(scan_values.get("hash_mode", HashMode.FULL))),
-        sample_budget=int(scan_values.get("sample_budget", DEFAULT_SAMPLE_BUDGET)),
+        sample_target_bytes=int(
+            scan_values.get("sample_target_bytes", DEFAULT_SAMPLE_TARGET_BYTES)
+        ),
         sample_count=int(scan_values.get("sample_count", DEFAULT_SAMPLE_COUNT)),
         follow_links=bool(scan_values.get("follow_links", False)),
         retry_count=int(scan_values.get("retry_count", 1)),

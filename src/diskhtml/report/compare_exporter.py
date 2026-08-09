@@ -13,7 +13,7 @@ from typing import Any
 from ..database import Database
 from ..models import CompareStatus
 from ..util import utc_now
-from .exporter import _publish_directory, _row_to_dict, _write_csv, _write_json
+from ._shared import publish_directory, row_to_dict, write_csv, write_json
 
 COMPARE_REPORT_FORMAT_VERSION = 1
 _COMPARE_COLUMNS = (
@@ -44,7 +44,7 @@ def export_compare(database: Database, compare_id: str, output_path: Path | str)
     try:
         temporary.mkdir()
         _write_compare_export(database, compare_id, temporary)
-        _publish_directory(temporary, destination)
+        publish_directory(temporary, destination)
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -62,11 +62,11 @@ def _write_compare_export(database: Database, compare_id: str, output: Path) -> 
     summary = {
         "format_version": COMPARE_REPORT_FORMAT_VERSION,
         "generated_at": utc_now(),
-        "compare": _row_to_dict(compare),
+        "compare": row_to_dict(compare),
         "statistics": json.loads(compare["summary_json"]),
     }
-    _write_json(output / "compare_summary.json", summary)
-    _write_csv(
+    write_json(output / "compare_summary.json", summary)
+    write_csv(
         output / "compare_entries.csv", _COMPARE_COLUMNS, database.iter_compare_entries(compare_id)
     )
     manifest = _write_compare_shards(database.iter_compare_entries(compare_id), shards)
@@ -96,7 +96,7 @@ def _write_compare_shards(rows: Iterator[Any], directory: Path) -> list[dict[str
             handle, first = handles[key]
             if not first:
                 handle.write(",")
-            handle.write(json.dumps(_row_to_dict(row), ensure_ascii=False, separators=(",", ":")))
+            handle.write(json.dumps(row_to_dict(row), ensure_ascii=False, separators=(",", ":")))
             handles[key][1] = False
     finally:
         for handle, _ in handles.values():

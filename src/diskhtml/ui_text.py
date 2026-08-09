@@ -37,7 +37,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "HASH_STRATEGY": "Hash 策略",
         "HASH_MODE_FULL": "完整 SHA-256",
         "HASH_MODE_SAMPLED": "采样 SHA-256",
-        "SAMPLE_BUDGET_MB": "采样预算（MB）",
+        "SAMPLE_TARGET_BYTES_MB": "目标采样读取量（MB）",
         "SAMPLE_COUNT": "固定采样次数",
         "SAMPLE_WARNING": "采样指纹仅用于快速预检，不是完整内容一致性证明。",
         "HTML_HASH_STRATEGY": "HTML 指定策略",
@@ -122,7 +122,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "HASH_STRATEGY": "Hash strategy",
         "HASH_MODE_FULL": "Full SHA-256",
         "HASH_MODE_SAMPLED": "Sampled SHA-256",
-        "SAMPLE_BUDGET_MB": "Sample budget (MB)",
+        "SAMPLE_TARGET_BYTES_MB": "Target sample read (MB)",
         "SAMPLE_COUNT": "Fixed sample count",
         "SAMPLE_WARNING": (
             "A sampled fingerprint is only a quick precheck, not proof of full content equality."

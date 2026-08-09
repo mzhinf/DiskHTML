@@ -1,4 +1,4 @@
-"""为大文件快速预检提供固定次数、固定预算的 SHA-256 采样指纹。"""
+"""为大文件快速预检提供固定次数、目标读取量的 SHA-256 采样指纹。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, Protocol, TypedDict
 
 FULL_SHA256_ALGORITHM = "full-sha256"
-DEFAULT_SAMPLE_BUDGET = 8 * 1024 * 1024
+DEFAULT_SAMPLE_TARGET_BYTES = 8 * 1024 * 1024
 DEFAULT_SAMPLE_COUNT = 8
 MAX_SAMPLE_COUNT = 32
 
@@ -16,6 +16,7 @@ _FORMAT_VERSION = b"diskhtml-sampled-sha256-v1"
 _MEBIBYTE = 1024 * 1024
 _MEBIBYTE_DECIMAL_PLACES = 20
 _FULL_HASH_READ_SIZE = 1024 * 1024
+
 
 class FileChangedDuringHashError(RuntimeError):
     """表示文件在完整哈希或采样指纹计算期间发生了变化。"""
@@ -35,7 +36,7 @@ class SampledHashResult(TypedDict):
     algorithm: str
     digest: str
     file_size: int
-    sample_budget: int
+    sample_target_bytes: int
     sample_count: int
     actual_sample_count: int
     block_size: int
@@ -43,18 +44,18 @@ class SampledHashResult(TypedDict):
 
 
 def sampled_sha256_algorithm(
-    sample_budget: int = DEFAULT_SAMPLE_BUDGET,
+    sample_target_bytes: int = DEFAULT_SAMPLE_TARGET_BYTES,
     sample_count: int = DEFAULT_SAMPLE_COUNT,
 ) -> str:
     """校验采样参数并返回稳定的采样算法标识。"""
 
-    _validate_parameters(sample_budget, sample_count)
-    return f"sampled-sha256-{_budget_megabytes_label(sample_budget)}_{sample_count}"
+    _validate_parameters(sample_target_bytes, sample_count)
+    return f"sampled-sha256-{_target_megabytes_label(sample_target_bytes)}_{sample_count}"
 
 
 def sampled_sha256(
     path: str | os.PathLike[str],
-    sample_budget: int = DEFAULT_SAMPLE_BUDGET,
+    sample_target_bytes: int = DEFAULT_SAMPLE_TARGET_BYTES,
     sample_count: int = DEFAULT_SAMPLE_COUNT,
 ) -> SampledHashResult:
     """计算完整 SHA-256，或生成仅供快速预检使用的采样指纹。
@@ -63,16 +64,16 @@ def sampled_sha256(
     次数规划均匀数据块；偏移空间不足时会去重，并在结果中报告实际读取次数。
     """
 
-    _validate_parameters(sample_budget, sample_count)
+    _validate_parameters(sample_target_bytes, sample_count)
     file_path = Path(path)
     before = os.stat(file_path)
     file_size = before.st_size
 
     try:
-        if file_size <= sample_budget:
-            result = _full_sha256(file_path, file_size, sample_budget, sample_count)
+        if file_size <= sample_target_bytes:
+            result = _full_sha256(file_path, file_size, sample_target_bytes, sample_count)
         else:
-            result = _sampled_sha256(file_path, file_size, sample_budget, sample_count)
+            result = _sampled_sha256(file_path, file_size, sample_target_bytes, sample_count)
     except FileChangedDuringHashError:
         _ensure_file_unchanged(file_path, before, os.stat(file_path))
         raise
@@ -96,13 +97,13 @@ def _ensure_file_unchanged(
         )
 
 
-def _validate_parameters(sample_budget: int, sample_count: int) -> None:
-    """拒绝会破坏固定预算采样语义的参数。"""
+def _validate_parameters(sample_target_bytes: int, sample_count: int) -> None:
+    """拒绝会破坏固定目标读取量采样语义的参数。"""
 
-    if isinstance(sample_budget, bool) or not isinstance(sample_budget, int):
-        raise TypeError("sample_budget 必须是大于 0 的整数（字节）。")
-    if sample_budget <= 0:
-        raise ValueError("sample_budget 必须大于 0。")
+    if isinstance(sample_target_bytes, bool) or not isinstance(sample_target_bytes, int):
+        raise TypeError("sample_target_bytes 必须是大于 0 的整数（字节）。")
+    if sample_target_bytes <= 0:
+        raise ValueError("sample_target_bytes 必须大于 0。")
     if isinstance(sample_count, bool) or not isinstance(sample_count, int):
         raise TypeError(f"sample_count 必须是 2 到 {MAX_SAMPLE_COUNT} 之间的整数。")
     if sample_count < 2:
@@ -114,7 +115,7 @@ def _validate_parameters(sample_budget: int, sample_count: int) -> None:
 def _full_sha256(
     path: Path,
     file_size: int,
-    sample_budget: int,
+    sample_target_bytes: int,
     requested_sample_count: int,
 ) -> SampledHashResult:
     """顺序读取完整文件，并返回标准 SHA-256 摘要。"""
@@ -128,7 +129,7 @@ def _full_sha256(
         "algorithm": FULL_SHA256_ALGORITHM,
         "digest": digest.hexdigest(),
         "file_size": file_size,
-        "sample_budget": sample_budget,
+        "sample_target_bytes": sample_target_bytes,
         "sample_count": requested_sample_count,
         "actual_sample_count": 1,
         "block_size": file_size,
@@ -139,19 +140,19 @@ def _full_sha256(
 def _sampled_sha256(
     path: Path,
     file_size: int,
-    sample_budget: int,
+    sample_target_bytes: int,
     requested_sample_count: int,
 ) -> SampledHashResult:
     """按升序偏移读取均匀数据块，并生成自描述采样指纹。"""
 
-    block_size = (sample_budget + requested_sample_count - 1) // requested_sample_count
+    block_size = (sample_target_bytes + requested_sample_count - 1) // requested_sample_count
     offsets = _sample_offsets(file_size, block_size, requested_sample_count)
-    algorithm = sampled_sha256_algorithm(sample_budget, requested_sample_count)
+    algorithm = sampled_sha256_algorithm(sample_target_bytes, requested_sample_count)
     digest = hashlib.sha256()
     _update_field(digest, _FORMAT_VERSION)
     _update_field(digest, algorithm.encode("ascii"))
     _update_integer(digest, file_size)
-    _update_integer(digest, sample_budget)
+    _update_integer(digest, sample_target_bytes)
     _update_integer(digest, requested_sample_count)
     _update_integer(digest, len(offsets))
     _update_integer(digest, block_size)
@@ -175,7 +176,7 @@ def _sampled_sha256(
         "algorithm": algorithm,
         "digest": digest.hexdigest(),
         "file_size": file_size,
-        "sample_budget": sample_budget,
+        "sample_target_bytes": sample_target_bytes,
         "sample_count": requested_sample_count,
         "actual_sample_count": len(offsets),
         "block_size": block_size,
@@ -192,10 +193,10 @@ def _sample_offsets(file_size: int, block_size: int, sample_count: int) -> tuple
     return tuple(sorted(offsets))
 
 
-def _budget_megabytes_label(sample_budget: int) -> str:
-    """把字节预算转换为无精度损失的 1024² 字节 MB 标识。"""
+def _target_megabytes_label(sample_target_bytes: int) -> str:
+    """把目标字节数转换为无精度损失的 1024² 字节 MB 标识。"""
 
-    whole, remainder = divmod(sample_budget, _MEBIBYTE)
+    whole, remainder = divmod(sample_target_bytes, _MEBIBYTE)
     if remainder == 0:
         return str(whole)
     decimal_numerator = remainder * 5**_MEBIBYTE_DECIMAL_PLACES
@@ -218,7 +219,7 @@ def _update_field(digest: _HashUpdater, payload: bytes) -> None:
 
 __all__ = [
     "FULL_SHA256_ALGORITHM",
-    "DEFAULT_SAMPLE_BUDGET",
+    "DEFAULT_SAMPLE_TARGET_BYTES",
     "DEFAULT_SAMPLE_COUNT",
     "MAX_SAMPLE_COUNT",
     "FileChangedDuringHashError",

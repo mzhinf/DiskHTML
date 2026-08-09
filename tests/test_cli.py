@@ -122,7 +122,7 @@ class CliTests(TestCase):
             self.assertIn('id="same-heading"', comparison.read_text(encoding="utf-8"))
 
     def test_snapshot_cli_accepts_sampled_strategy(self) -> None:
-        """快照命令应把固定预算采样策略写入 HTML。"""
+        """快照命令应把目标读取量采样策略写入 HTML。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
@@ -138,7 +138,7 @@ class CliTests(TestCase):
                     str(archive),
                     "--hash-mode",
                     "sampled",
-                    "--sample-budget",
+                    "--sample-target-bytes",
                     "8",
                     "--sample-count",
                     "4",
@@ -147,6 +147,8 @@ class CliTests(TestCase):
             payload = read_html_snapshot(archive)
 
         self.assertEqual(payload["scan"]["hash_algorithm"], sampled_sha256_algorithm(8, 4))
+        options = json.loads(payload["scan"]["options_json"])
+        self.assertEqual(8, options["sample_target_bytes"])
 
     def _run(self, argv: list[str]) -> str:
         """运行一条 CLI 命令并返回去除末尾换行的标准输出。"""

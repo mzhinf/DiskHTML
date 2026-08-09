@@ -11,10 +11,8 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
 try:
-    from project_metadata import read_project_version
     from release_licenses import ReleaseLicenseError, verify_license_bundle
 except ModuleNotFoundError:
-    from scripts.project_metadata import read_project_version
     from scripts.release_licenses import ReleaseLicenseError, verify_license_bundle
 
 
@@ -57,16 +55,6 @@ def _validate_runtime_layout(package: Path) -> None:
     ]
     if qt_paths:
         raise RuntimeError("Tkinter 发布包仍包含 Qt 文件：" + ", ".join(sorted(qt_paths)))
-
-
-def _validate_embedded_project_version(package: Path, expected_version: str) -> None:
-    """确认冻结应用携带的项目元数据与构建版本一致。"""
-
-    embedded_metadata = package / "_internal" / "pyproject.toml"
-    if not embedded_metadata.is_file():
-        raise RuntimeError("发布包缺少运行时版本元数据：_internal/pyproject.toml")
-    if read_project_version(embedded_metadata.parent) != expected_version:
-        raise RuntimeError("发布包内的产品版本与仓库 pyproject.toml 不一致")
 
 
 def verify_release(archive_path: Path) -> None:

@@ -48,7 +48,7 @@ class ScannerTests(TestCase):
                 self.assertEqual(records["a.txt"]["hash_algorithm"], FULL_SHA256_ALGORITHM)
 
     def test_sampled_scan_records_each_files_actual_algorithm(self) -> None:
-        """采样模式下，预算内文件仍为完整 Hash，大文件保存采样算法。"""
+        """采样模式下，目标量内文件仍为完整 Hash，大文件保存采样算法。"""
 
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory)
@@ -60,7 +60,7 @@ class ScannerTests(TestCase):
                 workers=1,
                 queue_size=1,
                 hash_mode=HashMode.SAMPLED,
-                sample_budget=8,
+                sample_target_bytes=8,
                 sample_count=4,
             )
             with Database(root / "archive.sqlite3") as database:
@@ -71,6 +71,37 @@ class ScannerTests(TestCase):
         self.assertEqual(scan["hash_algorithm"], sampled_sha256_algorithm(8, 4))
         self.assertEqual(records["small.bin"]["hash_algorithm"], FULL_SHA256_ALGORITHM)
         self.assertEqual(records["large.bin"]["hash_algorithm"], sampled_sha256_algorithm(8, 4))
+
+    def test_path_iteration_keeps_scandir_order_and_lifo_descent(self) -> None:
+        """目录应按枚举顺序记录，并继续以栈的后进先出顺序产出子文件。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            for name in ("first", "second"):
+                child = source / name
+                child.mkdir()
+                (child / f"{name}.txt").write_text(name, encoding="utf-8")
+            with os.scandir(source) as entries:
+                enumeration_order = tuple(entry.name for entry in entries if entry.is_dir())
+
+            with Database(root / "archive.sqlite3") as database:
+                scan_id = database.create_scan("DIRECTORY", str(source), {})
+                paths = list(Scanner(database)._iter_paths(source, source, ScanOptions(), scan_id))
+                directory_order = tuple(
+                    row["relative_path"]
+                    for row in database.connection.execute(
+                        "SELECT relative_path FROM directories WHERE scan_id = ? ORDER BY id",
+                        (scan_id,),
+                    )
+                )
+
+        self.assertEqual(directory_order, enumeration_order)
+        self.assertEqual(
+            tuple(path.relative_to(source).as_posix() for path in paths),
+            tuple(f"{name}/{name}.txt" for name in reversed(enumeration_order)),
+        )
 
     def test_follow_links_handles_windows_junction_root(self) -> None:
         """启用跟随链接时，根路径为 Windows junction 也应能扫描。"""

@@ -1,5 +1,6 @@
-"""单文件 HTML 快照与比较报告测试。"""
+"""单文件 HTML 快照、策略兼容与比较报告测试。"""
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -199,7 +200,7 @@ class HtmlArchiveTests(TestCase):
                 workers=1,
                 queue_size=1,
                 hash_mode=HashMode.SAMPLED,
-                sample_budget=8,
+                sample_target_bytes=8,
                 sample_count=4,
             )
             archive = create_html_snapshot(historical, root / "sampled.html", options)
@@ -212,12 +213,14 @@ class HtmlArchiveTests(TestCase):
                 ScanConfig(workers=1, queue_size=1),
             )
             comparison_text = comparison.read_text(encoding="utf-8")
+            options_json = read_html_snapshot(archive)["scan"]["options_json"]
 
         self.assertEqual(HashMode.SAMPLED, strategy.hash_mode)
-        self.assertEqual(8, strategy.sample_budget)
+        self.assertEqual(8, strategy.sample_target_bytes)
         self.assertEqual(4, strategy.sample_count)
         self.assertIn('"PRECHECK_MATCH":1', comparison_text)
         self.assertIn("采样预检一致", comparison_text)
+        self.assertEqual(8, json.loads(options_json)["sample_target_bytes"])
 
     def test_previous_html_format_is_rejected(self) -> None:
         """旧 HTML 格式应明确拒绝，不执行兼容读取。"""

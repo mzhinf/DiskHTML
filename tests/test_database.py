@@ -1,6 +1,7 @@
 """SQLite 迁移、事务、仓储和流式写入测试。"""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -41,8 +42,13 @@ class DatabaseTests(TestCase):
 
                 problems = database.project_check()
 
-        self.assertTrue(any("scan_errors" in problem for problem in problems))
-        self.assertTrue(any("进度计数" in problem for problem in problems))
+        self.assertEqual(
+            problems,
+            (
+                "scan_errors 存在 1 条孤立记录",
+                "1 个扫描任务的进度计数与文件记录不一致",
+            ),
+        )
 
     def test_legacy_version_one_database_is_rejected(self) -> None:
         """旧版本项目应明确拒绝，且不得执行数据库升级。"""
@@ -111,6 +117,21 @@ class DatabaseTests(TestCase):
                 self.assertIsNone(database.get_file(scan_id, "a.txt"))
                 self.assertEqual(tuple(database.iter_errors(scan_id)), ())
                 self.assertEqual(database.integrity_check(), "ok")
+
+    def test_single_write_is_visible_to_another_connection_before_return(self) -> None:
+        """逐条兼容入口返回时必须已经提交，其他连接应立即可见。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "archive.sqlite3"
+            with Database(path) as database:
+                scan_id = database.create_scan("DIRECTORY", "C:/data", {})
+                database.record_file(scan_id, self._file_item("visible.txt", "visible.txt"))
+                with closing(sqlite3.connect(path)) as observer:
+                    count = observer.execute(
+                        "SELECT COUNT(*) FROM files WHERE scan_id = ?", (scan_id,)
+                    ).fetchone()[0]
+
+        self.assertEqual(count, 1)
 
     def test_batch_streams_ten_thousand_records(self) -> None:
         """批量写入和按路径遍历应支持大量记录且无需预先汇总。"""

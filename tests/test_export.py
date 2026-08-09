@@ -10,7 +10,7 @@ from unittest.mock import patch
 from diskhtml.database import Database
 from diskhtml.models import ScanStatus
 from diskhtml.report import export_scan
-from diskhtml.report.exporter import _publish_directory
+from diskhtml.report._shared import publish_directory
 from diskhtml.sampled_hash import FULL_SHA256_ALGORITHM
 
 
@@ -78,12 +78,12 @@ class ExportTests(TestCase):
             temporary.mkdir()
             with (
                 patch(
-                    "diskhtml.report.exporter.os.replace",
+                    "diskhtml.report._shared.os.replace",
                     side_effect=[PermissionError("模拟文件锁"), None],
                 ) as replace,
-                patch("diskhtml.report.exporter.time.sleep") as sleep,
+                patch("diskhtml.report._shared.time.sleep") as sleep,
             ):
-                _publish_directory(temporary, destination)
+                publish_directory(temporary, destination)
 
         self.assertEqual(replace.call_count, 2)
         sleep.assert_called_once_with(0.05)

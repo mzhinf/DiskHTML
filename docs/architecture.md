@@ -20,16 +20,22 @@ DiskHTML 包含两个明确分离的界面：
 | `src/diskhtml/version.py` | 从唯一产品版本源或安装元数据读取运行时版本 | `__init__`、UI、CLI、HTML 服务 |
 | `src/diskhtml/exe_cli.py` | EXE 的 `snapshot`、`compare-source`、`render-sqlite` 命令 | `html_archive`、`config` |
 | `src/diskhtml/cli.py` | 高级 SQLite 项目、恢复、校验和兼容导出命令 | `scanner`、`compare`、`database`、`report` |
+| `src/diskhtml/_cli_options.py` | 两套 CLI 共享的扫描参数声明与配置合并 | `cli`、`exe_cli`、`config` |
 | `src/diskhtml/html_archive.py` | 快照、SQLite 重渲染和“快照目录对本机目录”的应用服务 | `scanner`、`database`、`compare`、`archive_ui` |
 | `src/diskhtml/archive_ui.py` | 内联 HTML/CSS/JavaScript、目录树、Lucide SVG 与浏览器端中英文渲染 | `html_archive`；不使用外部 CDN |
 | `src/diskhtml/scanner.py` | 文件枚举、有界并发 Hash、单写入者、暂停和取消 | `database`、`disk`、`models`、`config` |
-| `src/diskhtml/sampled_hash.py` | 固定次数、固定预算的 SHA-256 大文件快速预检；不替代完整内容哈希 | Python 标准库；供预检调用方独立复用 |
+| `src/diskhtml/sampled_hash.py` | 固定次数、目标读取量的 SHA-256 大文件快速预检；不替代完整内容哈希 | Python 标准库；供预检调用方独立复用 |
 | `src/diskhtml/disk.py` | 容量、卷 GUID、卷标、文件系统及可选物理磁盘元数据 | `scanner`；Win32 API + 可降级 PowerShell 查询 |
-| `src/diskhtml/database.py` | SQLite schema、迁移、事务、仓储和流式查询 | `models`、`util` |
+| `src/diskhtml/database.py` | SQLite 连接、迁移编排、事务、仓储和流式查询 | `models`、`util` |
+| `src/diskhtml/_database_schema.py` | SQLite 模式声明、版本读写与结构校验 | `database` |
+| `src/diskhtml/_project_check.py` | 项目完整性、枚举、引用与计数自检规则 | `database` |
+| `src/diskhtml/_database_writes.py` | 逐条与批量入口共用的 SQL 写入与参数归一化 | `database` |
 | `src/diskhtml/compare.py` | 按相对路径归并并产生完整一致、采样预检一致、已变化、新增、缺失或错误状态 | `database`、`scanner`、`models` |
+| `src/diskhtml/_comparison_entries.py` | 从两个已排序文件行流生成比较条目的领域内部接口 | `compare`、`html_archive` |
 | `src/diskhtml/models.py` | 领域枚举、进度、错误分类和状态转换契约 | 所有业务层 |
 | `src/diskhtml/config.py` | 版本化 TOML 配置、默认值和校验 | UI、CLI、扫描器 |
 | `src/diskhtml/report/exporter.py` | 高级 SQLite 扫描结果的 CSV/JSON/目录报告导出 | `cli`、基准脚本 |
+| `src/diskhtml/report/_shared.py` | 报告导出器共用的 CSV、JSON 与目录发布工具 | 报告导出器 |
 | `src/diskhtml/report/compare_exporter.py` | 高级比较结果导出 | `cli` |
 | `src/diskhtml/logging_config.py` | 文本和结构化 JSON 日志 | `cli` |
 | `src/diskhtml/util.py` | 时间、路径键和显示格式等底层工具 | 数据库、扫描、报告 |
@@ -58,7 +64,7 @@ DiskHTML 包含两个明确分离的界面：
 | SQLite 索引 | 与快照 HTML 同名；用于恢复数据和重新生成新版 HTML |
 | 比对状态 | `MATCH` 完整一致、`PRECHECK_MATCH` 采样预检一致、`CHANGED` 已变化、`ADDED` 本机新增、`MISSING` 基准存在但本机缺失、`ERROR` 无法可靠判断 |
 | 路径键 | 保存原始相对路径与规范化 `path_key`；统一分隔符并 Unicode casefold |
-| Hash 策略 | 默认计算 `full-sha256`；创建快照时可选择固定预算、固定次数的采样策略，预算内文件仍计算完整 SHA-256 |
+| Hash 策略 | 默认计算 `full-sha256`；创建快照时可选择固定目标读取量、固定次数的采样策略，目标量内文件仍计算完整 SHA-256 |
 | 采样指纹 | 写入 `sha256` 摘要列并由 `hash_algorithm` 明确标识，仅用于大文件快速预检，不作为完整内容一致性证明 |
 | 产品版本 | 唯一来源为 `pyproject.toml` 的 `project.version`；HTML 使用 `generator` 记录生成版本，EXE 写入 Windows 文件版本资源 |
 | EXE 发布 | PyInstaller `onedir`；发布 ZIP 内只有完整 `DiskHTML/` 顶层目录；不能单独复制 EXE |

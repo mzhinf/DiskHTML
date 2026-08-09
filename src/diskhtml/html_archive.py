@@ -13,8 +13,8 @@ from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ._comparison_entries import iter_comparison_entries
 from .archive_ui import document_footer, page_header, tree_document
-from .compare import _iter_entries
 from .config import ScanConfig
 from .database import Database
 from .models import CompareStatus, ScanProgress
@@ -140,7 +140,7 @@ def _scan_config_from_payload(
         raise ValueError("HTML 快照的扫描配置损坏") from exc
     if not isinstance(values, dict):
         raise ValueError("HTML 快照的扫描配置格式无效")
-    required_fields = frozenset({"hash_mode", "sample_budget", "sample_count"})
+    required_fields = frozenset({"hash_mode", "sample_target_bytes", "sample_count"})
     missing_fields = sorted(required_fields - values.keys())
     if missing_fields:
         raise ValueError(f"HTML 快照缺少 Hash 配置：{', '.join(missing_fields)}")
@@ -148,7 +148,7 @@ def _scan_config_from_payload(
         base_config,
         sha512=False,
         hash_mode=str(values["hash_mode"]),
-        sample_budget=int(values["sample_budget"]),
+        sample_target_bytes=int(values["sample_target_bytes"]),
         sample_count=int(values["sample_count"]),
     )
     if scan.get("hash_algorithm") != configured.requested_hash_algorithm():
@@ -170,7 +170,7 @@ def _compare_payload(
 ) -> dict[str, Any]:
     """归并两侧文件清单并构建可写入比较报告的数据。"""
 
-    entries = list(_iter_entries(_ordered_files(left), _ordered_files(right)))
+    entries = list(iter_comparison_entries(_ordered_files(left), _ordered_files(right)))
     statistics = {status.value: 0 for status in CompareStatus}
     for entry in entries:
         statistics[str(entry["status"])] += 1
@@ -513,7 +513,9 @@ def _fallback_row_values(item: dict[str, Any], compare: bool) -> tuple[object, .
     )
 
 
-def _comparison_fallback_values(item: dict[str, Any]) -> tuple[object, object, object, object, object]:
+def _comparison_fallback_values(
+    item: dict[str, Any],
+) -> tuple[object, object, object, object, object]:
     """优先显示比较报告右侧记录，不存在时回退到左侧记录。"""
 
     side = "new" if item.get("new_size_bytes") is not None else "old"

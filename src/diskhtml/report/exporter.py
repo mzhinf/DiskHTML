@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import csv
 import html
 import json
-import os
 import shutil
-import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -15,6 +12,7 @@ from typing import Any
 
 from ..database import Database
 from ..util import utc_now
+from ._shared import publish_directory, row_to_dict, write_csv, write_json
 
 REPORT_FORMAT_VERSION = 1
 _FILE_COLUMNS = (
@@ -54,7 +52,7 @@ def export_scan(database: Database, scan_id: str, output_path: Path | str) -> Pa
     try:
         temporary.mkdir()
         _write_export(database, scan_id, temporary)
-        _publish_directory(temporary, destination)
+        publish_directory(temporary, destination)
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -73,26 +71,16 @@ def _write_export(database: Database, scan_id: str, output: Path) -> None:
         "format_version": REPORT_FORMAT_VERSION,
         "generated_at": utc_now(),
         "scan_id": scan_id,
-        "scan": _row_to_dict(database.get_scan(scan_id)),
+        "scan": row_to_dict(database.get_scan(scan_id)),
         "statistics": database.summary(scan_id),
     }
-    _write_json(output / "disk_info.json", _row_to_dict(volume))
-    _write_json(output / "summary.json", summary)
-    _write_csv(output / "file_list.csv", _FILE_COLUMNS, database.iter_files(scan_id))
-    _write_csv(output / "hash_list.csv", _HASH_COLUMNS, database.iter_files(scan_id))
+    write_json(output / "disk_info.json", row_to_dict(volume))
+    write_json(output / "summary.json", summary)
+    write_csv(output / "file_list.csv", _FILE_COLUMNS, database.iter_files(scan_id))
+    write_csv(output / "hash_list.csv", _HASH_COLUMNS, database.iter_files(scan_id))
     manifest = _write_shards(database.iter_files(scan_id), shards)
     _write_assets(assets, manifest, summary)
     (output / "report.html").write_text(_report_html(summary), encoding="utf-8")
-
-
-def _write_csv(path: Path, fields: tuple[str, ...], rows: Iterator[Any]) -> None:
-    """以 UTF-8 BOM 流式写入 CSV，确保 Excel 正确识别中文。"""
-
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
 
 
 def _write_shards(rows: Iterator[Any], directory: Path) -> list[dict[str, str]]:
@@ -128,7 +116,7 @@ def _write_shards(rows: Iterator[Any], directory: Path) -> list[dict[str, str]]:
             if not first_item:
                 active_file.write(",")
             active_file.write(
-                json.dumps(_row_to_dict(row), ensure_ascii=False, separators=(",", ":"))
+                json.dumps(row_to_dict(row), ensure_ascii=False, separators=(",", ":"))
             )
             first_item = False
     finally:
@@ -189,28 +177,3 @@ def _report_html(summary: dict[str, Any]) -> str:
 
     title = html.escape(f"DiskHTML 扫描报告 {summary['scan_id']}")
     return f"""<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><link rel=\"stylesheet\" href=\"report_assets/styles.css\"></head><body><h1>{title}</h1><p id=\"summary\"></p><h2>目录分片</h2><div id=\"directories\"></div><p id=\"status\" class=\"muted\">选择一个目录加载文件明细。</p><h2>目录树</h2><div id=\"tree\" class=\"muted\">尚未加载目录分片。</div><h2>搜索与筛选</h2><input id=\"filter\" type=\"search\" placeholder=\"按路径、状态或错误信息筛选当前分片\"><table id=\"files\"><thead><tr><th>路径</th><th>大小</th><th>状态</th><th>SHA256</th><th>错误</th></tr></thead><tbody></tbody></table><h2>文件详情</h2><pre id=\"detail\" class=\"muted\">选择文件查看详情。</pre><script src=\"report_assets/manifest.js\"></script><script src=\"report_assets/app.js\"></script></body></html>"""
-
-
-def _write_json(path: Path, value: Any) -> None:
-    """以 UTF-8 写入稳定缩进的 JSON。"""
-
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _row_to_dict(row: Any) -> dict[str, Any] | None:
-    """把 sqlite Row 转换为 JSON 可序列化字典。"""
-
-    return dict(row) if row is not None else None
-
-
-def _publish_directory(temporary: Path, destination: Path) -> None:
-    """在 Windows 短暂占用目录时有限重试原子发布。"""
-
-    for attempt in range(3):
-        try:
-            os.replace(temporary, destination)
-            return
-        except PermissionError:
-            if attempt == 2:
-                raise
-            time.sleep(0.05 * (attempt + 1))

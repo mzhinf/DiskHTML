@@ -11,6 +11,7 @@ from unittest.mock import patch
 from diskhtml import scanner as scanner_module
 from diskhtml.database import Database
 from diskhtml.models import HashStatus, ScanStatus
+from diskhtml.sampled_hash import FileChangedDuringHashError
 from diskhtml.scanner import ScanController, Scanner, ScanOptions
 
 
@@ -155,6 +156,30 @@ class ScannerTests(TestCase):
             self.assertEqual(record["hash_status"], HashStatus.UNSTABLE)
             self.assertIsNone(record["sha256"])
             self.assertTrue(any(error["error_code"] == "CHANGED_DURING_HASH" for error in errors))
+
+    def test_sampled_change_retries_exact_configured_attempts(self) -> None:
+        """采样变化异常应重试配置次数，并仅返回最后一次不稳定元数据。"""
+
+        with TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            target = root / "changing.bin"
+            target.write_bytes(b"changing")
+            options = ScanOptions(hash_mode="sampled", sample_target_bytes=4, retry_count=2)
+            with Database(root / "archive.sqlite3") as database:
+                scanner = Scanner(database)
+                with patch.object(
+                    scanner,
+                    "_read_hash_attempt",
+                    side_effect=FileChangedDuringHashError("模拟采样期间变化"),
+                ) as read_attempt:
+                    result = scanner._hash_file(target, root, options)
+
+        self.assertEqual(read_attempt.call_count, options.retry_count + 1)
+        self.assertEqual(result["attempt_count"], options.retry_count + 1)
+        self.assertEqual(result["hash_status"], HashStatus.UNSTABLE)
+        self.assertEqual(result["error_code"], "CHANGED_DURING_HASH")
+        self.assertIsNone(result["sha256"])
+        self.assertIsNone(result["sha512"])
 
     def test_failed_task_resumes_from_committed_file_boundary(self) -> None:
         """失败任务恢复时复用已提交文件，并重新计算其余文件。"""

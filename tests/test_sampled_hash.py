@@ -1,4 +1,4 @@
-"""固定次数、固定预算 SHA-256 采样指纹测试。"""
+"""固定次数、目标读取量 SHA-256 采样指纹测试。"""
 
 from __future__ import annotations
 
@@ -37,31 +37,31 @@ class SampledSha256Tests(TestCase):
         self.assertEqual(result["sampled_bytes"], 0)
         self.assertEqual(result["actual_sample_count"], 1)
 
-    def test_file_smaller_than_budget_uses_full_sha256(self) -> None:
-        """小于预算的文件应完整读取，摘要与标准库结果一致。"""
+    def test_file_smaller_than_target_uses_full_sha256(self) -> None:
+        """小于目标读取量的文件应完整读取，摘要与标准库结果一致。"""
 
         payload = b"small-file"
-        result = self._hash_payload(payload, sample_budget=len(payload) + 1)
+        result = self._hash_payload(payload, sample_target_bytes=len(payload) + 1)
 
         self.assertEqual(result["mode"], "full")
         self.assertEqual(result["algorithm"], "full-sha256")
         self.assertEqual(result["digest"], hashlib.sha256(payload).hexdigest())
         self.assertEqual(result["sampled_bytes"], len(payload))
 
-    def test_file_equal_to_budget_uses_full_sha256(self) -> None:
-        """恰好等于预算的文件仍应计算完整 SHA-256。"""
+    def test_file_equal_to_target_uses_full_sha256(self) -> None:
+        """恰好等于目标读取量的文件仍应计算完整 SHA-256。"""
 
-        payload = b"equal-budget"
-        result = self._hash_payload(payload, sample_budget=len(payload))
+        payload = b"equal-target"
+        result = self._hash_payload(payload, sample_target_bytes=len(payload))
 
         self.assertEqual(result["mode"], "full")
         self.assertEqual(result["digest"], hashlib.sha256(payload).hexdigest())
 
-    def test_large_file_uses_fixed_sample_count_and_budget_derived_block(self) -> None:
+    def test_large_file_uses_fixed_sample_count_and_target_derived_block(self) -> None:
         """大文件应按请求次数读取，并用向上取整值作为数据块大小。"""
 
         payload = bytes(range(64))
-        result = self._hash_payload(payload, sample_budget=17, sample_count=4)
+        result = self._hash_payload(payload, sample_target_bytes=17, sample_count=4)
 
         self.assertEqual(result["mode"], "sampled")
         self.assertEqual(result["sample_count"], 4)
@@ -72,11 +72,11 @@ class SampledSha256Tests(TestCase):
     def test_default_algorithm_name_uses_megabyte_budget(self) -> None:
         """默认八 MB、八次采样应使用约定的算法标识。"""
 
-        budget = 8 * 1024 * 1024
+        target_bytes = 8 * 1024 * 1024
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             path = Path(directory) / "large.bin"
             with path.open("wb") as handle:
-                handle.seek(budget)
+                handle.seek(target_bytes)
                 handle.write(b"\0")
 
             result = sampled_sha256(path)
@@ -90,13 +90,13 @@ class SampledSha256Tests(TestCase):
         with TemporaryDirectory(dir=Path(__file__).parent) as directory:
             path = Path(directory) / "sampled.bin"
             path.write_bytes(payload)
-            baseline = sampled_sha256(path, sample_budget=9, sample_count=3)["digest"]
+            baseline = sampled_sha256(path, sample_target_bytes=9, sample_count=3)["digest"]
 
             for offset in (0, len(payload) // 2, len(payload) - 1):
                 changed = payload.copy()
                 changed[offset] ^= 0xFF
                 path.write_bytes(changed)
-                digest = sampled_sha256(path, sample_budget=9, sample_count=3)["digest"]
+                digest = sampled_sha256(path, sample_target_bytes=9, sample_count=3)["digest"]
                 self.assertNotEqual(digest, baseline, f"偏移 {offset} 的变化未影响指纹")
 
     def test_offsets_are_unique_sorted_and_include_both_ends(self) -> None:
@@ -114,7 +114,7 @@ class SampledSha256Tests(TestCase):
     def test_tiny_offset_space_is_deduplicated_and_reported(self) -> None:
         """唯一偏移不足时不得重复寻道，结果应报告实际采样次数。"""
 
-        result = self._hash_payload(b"ab", sample_budget=1, sample_count=8)
+        result = self._hash_payload(b"ab", sample_target_bytes=1, sample_count=8)
 
         self.assertEqual(result["sample_count"], 8)
         self.assertEqual(result["actual_sample_count"], 2)
@@ -128,8 +128,8 @@ class SampledSha256Tests(TestCase):
             path = Path(directory) / "stable.bin"
             path.write_bytes(payload)
 
-            first = sampled_sha256(path, sample_budget=24, sample_count=6)
-            second = sampled_sha256(path, sample_budget=24, sample_count=6)
+            first = sampled_sha256(path, sample_target_bytes=24, sample_count=6)
+            second = sampled_sha256(path, sample_target_bytes=24, sample_count=6)
 
         self.assertEqual(first, second)
 
@@ -143,8 +143,8 @@ class SampledSha256Tests(TestCase):
             shorter.write_bytes(b"\0" * 40)
             longer.write_bytes(b"\0" * 41)
 
-            first = sampled_sha256(shorter, sample_budget=8, sample_count=4)
-            second = sampled_sha256(longer, sample_budget=8, sample_count=4)
+            first = sampled_sha256(shorter, sample_target_bytes=8, sample_count=4)
+            second = sampled_sha256(longer, sample_target_bytes=8, sample_count=4)
 
         self.assertNotEqual(first["digest"], second["digest"])
 
@@ -155,14 +155,17 @@ class SampledSha256Tests(TestCase):
             path = Path(directory) / "input.bin"
             path.write_bytes(b"data")
 
-            for budget in (0, -1):
-                with self.subTest(sample_budget=budget):
-                    with self.assertRaisesRegex(ValueError, "sample_budget"):
-                        sampled_sha256(path, sample_budget=budget)
-            for budget in (True, 1.5):
-                with self.subTest(sample_budget=budget):
-                    with self.assertRaisesRegex(TypeError, "sample_budget"):
-                        sampled_sha256(path, sample_budget=budget)  # type: ignore[arg-type]
+            for target_bytes in (0, -1):
+                with self.subTest(sample_target_bytes=target_bytes):
+                    with self.assertRaisesRegex(ValueError, "sample_target_bytes"):
+                        sampled_sha256(path, sample_target_bytes=target_bytes)
+            for target_bytes in (True, 1.5):
+                with self.subTest(sample_target_bytes=target_bytes):
+                    with self.assertRaisesRegex(TypeError, "sample_target_bytes"):
+                        sampled_sha256(  # type: ignore[arg-type]
+                            path,
+                            sample_target_bytes=target_bytes,
+                        )
             for count in (1, 33):
                 with self.subTest(sample_count=count):
                     with self.assertRaisesRegex(ValueError, "sample_count"):
@@ -194,13 +197,13 @@ class SampledSha256Tests(TestCase):
                 with self.subTest(after=after):
                     with patch("diskhtml.sampled_hash.os.stat", side_effect=(before, after)):
                         with self.assertRaisesRegex(FileChangedDuringHashError, "发生变化"):
-                            sampled_sha256(path, sample_budget=16, sample_count=4)
+                            sampled_sha256(path, sample_target_bytes=16, sample_count=4)
 
     def _hash_payload(
         self,
         payload: bytes,
         *,
-        sample_budget: int,
+        sample_target_bytes: int,
         sample_count: int = 8,
     ) -> dict[str, object]:
         """在隔离临时目录中计算指定内容的结果。"""
@@ -210,7 +213,7 @@ class SampledSha256Tests(TestCase):
             path.write_bytes(payload)
             return sampled_sha256(
                 path,
-                sample_budget=sample_budget,
+                sample_target_bytes=sample_target_bytes,
                 sample_count=sample_count,
             )
 

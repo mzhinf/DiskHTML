@@ -342,7 +342,7 @@ class MainWindow(tk.Tk):
             "snapshot_output": self._snapshot_output_var.get(),
             "snapshot_follow": self._snapshot_follow_var.get(),
             "snapshot_hash_mode": self._snapshot_hash_mode_var.get(),
-            "snapshot_sample_budget_mb": self._snapshot_sample_budget_mb_var.get(),
+            "snapshot_sample_target_mb": self._snapshot_sample_target_mb_var.get(),
             "snapshot_sample_count": self._snapshot_sample_count_var.get(),
             "compare_archive": self._compare_archive_var.get(),
             "compare_source": self._compare_source_var.get(),
@@ -361,7 +361,7 @@ class MainWindow(tk.Tk):
         self._snapshot_output_var.set(str(values["snapshot_output"]))
         self._snapshot_follow_var.set(bool(values["snapshot_follow"]))
         self._snapshot_hash_mode_var.set(str(values["snapshot_hash_mode"]))
-        self._snapshot_sample_budget_mb_var.set(str(values["snapshot_sample_budget_mb"]))
+        self._snapshot_sample_target_mb_var.set(str(values["snapshot_sample_target_mb"]))
         self._snapshot_sample_count_var.set(str(values["snapshot_sample_count"]))
         self._refresh_snapshot_hash_controls()
         self._compare_archive_var.set(str(values["compare_archive"]))
@@ -495,8 +495,8 @@ class MainWindow(tk.Tk):
         hash_frame = ttk.LabelFrame(page, text=ui_text.HASH_STRATEGY, padding=(10, 6))
         hash_frame.pack(fill=tk.X, pady=(2, 6))
         self._snapshot_hash_mode_var = tk.StringVar(value=self._scan_config.hash_mode.value)
-        self._snapshot_sample_budget_mb_var = tk.StringVar(
-            value=str(self._scan_config.sample_budget // _MEBIBYTE)
+        self._snapshot_sample_target_mb_var = tk.StringVar(
+            value=str(self._scan_config.sample_target_bytes // _MEBIBYTE)
         )
         self._snapshot_sample_count_var = tk.StringVar(value=str(self._scan_config.sample_count))
         mode_row = ttk.Frame(hash_frame)
@@ -516,10 +516,13 @@ class MainWindow(tk.Tk):
             command=self._refresh_snapshot_hash_controls,
         ).pack(side=tk.LEFT, padx=(18, 0))
         self._snapshot_sample_frame = ttk.Frame(hash_frame)
-        ttk.Label(self._snapshot_sample_frame, text=ui_text.SAMPLE_BUDGET_MB).pack(side=tk.LEFT)
+        ttk.Label(
+            self._snapshot_sample_frame,
+            text=ui_text.SAMPLE_TARGET_BYTES_MB,
+        ).pack(side=tk.LEFT)
         ttk.Entry(
             self._snapshot_sample_frame,
-            textvariable=self._snapshot_sample_budget_mb_var,
+            textvariable=self._snapshot_sample_target_mb_var,
             width=8,
         ).pack(side=tk.LEFT, padx=(6, 16))
         ttk.Label(self._snapshot_sample_frame, text=ui_text.SAMPLE_COUNT).pack(side=tk.LEFT)
@@ -888,8 +891,8 @@ class MainWindow(tk.Tk):
                 "hash_mode": hash_mode,
             }
             if hash_mode is HashMode.SAMPLED:
-                changes["sample_budget"] = (
-                    int(self._snapshot_sample_budget_mb_var.get()) * _MEBIBYTE
+                changes["sample_target_bytes"] = (
+                    int(self._snapshot_sample_target_mb_var.get()) * _MEBIBYTE
                 )
                 changes["sample_count"] = int(self._snapshot_sample_count_var.get())
             config = replace(self._scan_config, **changes)

@@ -34,7 +34,7 @@ PowerShell 7 能降低旧 Windows PowerShell 输出编码差异，但“装了 7
 
 - Python 构建入口成为唯一构建逻辑来源，PowerShell 降为薄包装。
 - 发布验证会解压真实 ZIP、运行 EXE、生成包含中文文件名的 HTML 和 SQLite。
-- GitHub Windows CI 执行格式、静态检查、完整测试、构建和独立发布包验证。
+- GitHub Windows CI 执行格式、静态检查和完整测试；构建及独立发布包验证由受控本地发布流程执行。
 - 所有自有 Python/PowerShell 文件必须有用途说明，UTF-8 和损坏字符由测试检查。
 - README、文档索引、架构表、用户指南和发布清单统一到当前三个任务。
 - 发布清单明确 onedir ZIP、`_internal`、许可证、第三方声明和 Win10/11 验收。

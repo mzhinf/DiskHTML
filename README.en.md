@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-DiskHTML is a Windows 10/11 directory snapshot and Hash precheck/comparison tool. It uses full SHA-256 by default and can use a fixed-budget, fixed-count sampled fingerprint for large-file prechecks. A sampled match is not proof of full content equality.
+DiskHTML is a Windows 10/11 directory snapshot and Hash precheck/comparison tool. It uses full SHA-256 by default and can use a fixed-target-read, fixed-count sampled fingerprint for large-file prechecks. A sampled match is not proof of full content equality.
 
 ## Key features
 

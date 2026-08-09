@@ -12,10 +12,10 @@ chunk_size = 4194304
 exclude_dirs = ["System Volume Information", "$RECYCLE.BIN"]
 exclude_extensions = [".tmp", ".part"]
 sha512 = false
-# full 计算完整 SHA-256；sampled 仅对超过预算的文件生成快速预检采样指纹。
+# full 计算完整 SHA-256；sampled 仅对超过目标读取量的文件生成快速预检采样指纹。
 hash_mode = "full"
-# 采样读取总预算，单位为字节。
-sample_budget = 8388608
+# 目标采样读取量，单位为字节；实际读取量可能因数据块向上取整而略高。
+sample_target_bytes = 8388608
 # 固定采样次数；采样点从文件头到文件尾均匀分布。
 sample_count = 8
 follow_links = false

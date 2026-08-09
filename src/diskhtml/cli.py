@@ -6,12 +6,12 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 
 from . import __version__
+from ._cli_options import add_scan_options, merge_scan_config
 from .compare import compare_scans, compare_sources
-from .config import AppConfig, HashMode, ScanConfig, load_config
+from .config import AppConfig, load_config
 from .database import Database
 from .html_archive import (
     compare_html_archives,
@@ -75,11 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser = subparsers.add_parser("scan", help="扫描文件、目录或卷")
     scan_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
     scan_parser.add_argument("source", type=Path, help="扫描源路径")
-    _add_scan_options(scan_parser)
+    add_scan_options(scan_parser)
     snapshot_parser = subparsers.add_parser("snapshot", help="扫描目录或文件并生成单文件 HTML 快照")
     snapshot_parser.add_argument("source", type=Path, help="扫描源路径")
     snapshot_parser.add_argument("output", type=Path, help="新的 .html 快照")
-    _add_scan_options(snapshot_parser)
+    add_scan_options(snapshot_parser)
 
     render_sqlite_parser = subparsers.add_parser(
         "render-sqlite", help="从 SQLite 快照索引重新生成当前版本 HTML"
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare_source_parser.add_argument("archived_directory", help="快照中选择的目录；根目录使用 .")
     compare_source_parser.add_argument("source", type=Path, help="本机当前目录")
     compare_source_parser.add_argument("output", type=Path, help="新的 .html 比较报告")
-    _add_scan_options(compare_source_parser, include_hash_strategy=False)
+    add_scan_options(compare_source_parser, include_hash_strategy=False)
 
     compare_html_parser = subparsers.add_parser(
         "compare-html", help="比较两个 HTML 快照并生成单文件 HTML 报告"
@@ -121,38 +121,18 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
     compare_parser.add_argument("left", type=Path, help="左侧旧源路径")
     compare_parser.add_argument("right", type=Path, help="右侧新源路径")
-    _add_scan_options(compare_parser)
+    add_scan_options(compare_parser)
 
     verify_parser = subparsers.add_parser("verify", help="用当前路径复验历史扫描")
     verify_parser.add_argument("database", type=Path, help="SQLite 数据库路径")
     verify_parser.add_argument("scan_id", help="历史扫描任务标识")
     verify_parser.add_argument("source", type=Path, help="当前复验源路径")
-    _add_scan_options(verify_parser)
+    add_scan_options(verify_parser)
 
     import_parser = subparsers.add_parser("import", help="导入已有项目数据库")
     import_parser.add_argument("database", type=Path, help="新建或覆盖的目标数据库路径")
     import_parser.add_argument("source", type=Path, help="已有项目数据库路径")
     return parser
-
-
-def _add_scan_options(
-    parser: argparse.ArgumentParser, *, include_hash_strategy: bool = True
-) -> None:
-    """为扫描类命令添加有界资源和摘要选项。"""
-
-    parser.add_argument("--workers", type=int, help="Hash 工作线程数")
-    parser.add_argument("--queue-size", type=int, help="有界任务队列大小")
-    parser.add_argument("--chunk-size", type=int, help="每次读取的字节数")
-    parser.add_argument("--sha512", action="store_true", help="额外计算 SHA512")
-    parser.add_argument("--follow-links", action="store_true", help="跟随软链接和 Windows 重解析点")
-    if include_hash_strategy:
-        parser.add_argument(
-            "--hash-mode",
-            choices=tuple(mode.value for mode in HashMode),
-            help="SHA-256 计算模式：full 或 sampled",
-        )
-        parser.add_argument("--sample-budget", type=int, help="采样读取总预算，单位为字节")
-        parser.add_argument("--sample-count", type=int, help="固定采样次数，范围为 2 到 32")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -179,7 +159,9 @@ def _run_html_command(args: argparse.Namespace, config: AppConfig) -> int | None
     """执行不需要项目数据库的 HTML 快照、重渲染和比较命令。"""
 
     if args.command == "snapshot":
-        output = create_html_snapshot(args.source, args.output, _scan_options(config.scan, args))
+        output = create_html_snapshot(
+            args.source, args.output, merge_scan_config(config.scan, args)
+        )
         print(f"HTML 快照已生成：{output}")
         return 0
     if args.command == "render-sqlite":
@@ -192,7 +174,7 @@ def _run_html_command(args: argparse.Namespace, config: AppConfig) -> int | None
             args.archived_directory,
             args.source,
             args.output,
-            _scan_options(config.scan, args),
+            merge_scan_config(config.scan, args),
         )
         print(f"HTML 目录比较报告已生成：{output}")
         return 0
@@ -219,7 +201,7 @@ def _run_database_command(
         if args.command == "check-project":
             return _print_project_check(database)
         if args.command == "scan":
-            scan_id = Scanner(database).start(args.source, _scan_options(config.scan, args))
+            scan_id = Scanner(database).start(args.source, merge_scan_config(config.scan, args))
             print(f"扫描已完成：{scan_id}")
             return 0
         if args.command == "resume":
@@ -238,12 +220,15 @@ def _run_database_command(
             return 0
         if args.command == "compare":
             compare_id = compare_sources(
-                database, str(args.left), str(args.right), _scan_options(config.scan, args)
+                database,
+                str(args.left),
+                str(args.right),
+                merge_scan_config(config.scan, args),
             )
             print(f"比较已完成：{compare_id}")
             return 0
         if args.command == "verify":
-            current = Scanner(database).start(args.source, _scan_options(config.scan, args))
+            current = Scanner(database).start(args.source, merge_scan_config(config.scan, args))
             compare_id = compare_scans(database, args.scan_id, current)
             print(f"复验已完成：{compare_id}")
             return 0
@@ -284,22 +269,3 @@ def _import_database(database: Database, source_path: Path, destination_path: Pa
         raise ValueError("导入源数据库不能与目标数据库相同")
     with Database.open_existing(source_path) as source:
         source.connection.backup(database.connection)
-
-
-def _scan_options(defaults: ScanConfig, args: argparse.Namespace) -> ScanConfig:
-    """将命令行覆盖项合并到配置文件的安全默认值。"""
-
-    hash_mode = getattr(args, "hash_mode", None)
-    sample_budget = getattr(args, "sample_budget", None)
-    sample_count = getattr(args, "sample_count", None)
-    values = {
-        "workers": args.workers if args.workers is not None else defaults.workers,
-        "queue_size": args.queue_size if args.queue_size is not None else defaults.queue_size,
-        "chunk_size": args.chunk_size if args.chunk_size is not None else defaults.chunk_size,
-        "sha512": args.sha512 or defaults.sha512,
-        "hash_mode": HashMode(hash_mode) if hash_mode else defaults.hash_mode,
-        "sample_budget": sample_budget if sample_budget is not None else defaults.sample_budget,
-        "sample_count": sample_count if sample_count is not None else defaults.sample_count,
-        "follow_links": args.follow_links or defaults.follow_links,
-    }
-    return replace(defaults, **values)

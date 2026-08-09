@@ -35,6 +35,14 @@ class _ScanCounters:
     known_bytes: int = 0
 
 
+@dataclass(frozen=True)
+class _HashDigests:
+    """保存一次文件读取产生的规范化大写摘要。"""
+
+    sha256: str
+    sha512: str | None
+
+
 def _filesystem_path(path: Path) -> str:
     """返回可供 Windows 长路径 API 使用的本地路径。"""
 
@@ -407,12 +415,10 @@ class Scanner:
             directory = stack.pop()
             if options.follow_links:
                 try:
-                    target_stat = os.stat(_filesystem_path(directory), follow_symlinks=True)
-                    target_key = (target_stat.st_dev, target_stat.st_ino)
+                    target_key = self._directory_target_key(directory)
                 except OSError as exc:
-                    relative = relative_display_path(directory, root) if directory != root else ""
-                    self.database.record_error(
-                        scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
+                    self._record_entry_error(
+                        scan_id, self._directory_relative_path(directory, root), exc
                     )
                     continue
                 if target_key in visited_targets:
@@ -424,50 +430,98 @@ class Scanner:
                         path = directory / entry.name
                         relative = relative_display_path(path, root)
                         try:
-                            linked = entry.is_symlink() or self._is_reparse_point(entry)
-                            if linked and not options.follow_links:
-                                self.database.record_error(
-                                    scan_id,
-                                    relative,
-                                    "REPARSE_POINT",
-                                    "默认不跟随符号链接或 Windows 重解析点。",
-                                )
-                                continue
-                            if entry.is_dir(follow_symlinks=options.follow_links):
-                                if self._excluded_directory(relative, options):
-                                    continue
-                                key = normalized_path_key(relative)
-                                parent = Path(relative).parent.as_posix()
-                                parent_key = normalized_path_key(parent) if parent != "." else ""
-                                directory_stat = entry.stat(follow_symlinks=options.follow_links)
-                                self.database.record_directory(
-                                    scan_id,
-                                    relative,
-                                    key,
-                                    parent_key,
-                                    created_time=timestamp_to_utc(directory_stat.st_ctime_ns),
-                                    modified_time=timestamp_to_utc(directory_stat.st_mtime_ns),
-                                )
-                                stack.append(path)
-                            elif entry.is_file(
-                                follow_symlinks=options.follow_links
-                            ) and not self._excluded_file(path, options):
-                                yield path
-                        except OSError as exc:
-                            self.database.record_error(
-                                scan_id,
-                                relative,
-                                self._error_code(exc, ErrorCode.ENTRY_ERROR),
-                                str(exc),
+                            selected = self._classify_entry(
+                                entry, path, relative, options, scan_id, stack
                             )
+                            if selected is not None:
+                                yield selected
+                        except OSError as exc:
+                            self._record_entry_error(scan_id, relative, exc)
             except OSError as exc:
-                relative = relative_display_path(directory, root) if directory != root else ""
-                self.database.record_directory(
-                    scan_id, relative, normalized_path_key(relative), None, str(exc)
+                self._record_directory_error(
+                    scan_id, self._directory_relative_path(directory, root), exc
                 )
-                self.database.record_error(
-                    scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
-                )
+
+    def _classify_entry(
+        self,
+        entry: os.DirEntry[str],
+        path: Path,
+        relative: str,
+        options: ScanOptions,
+        scan_id: str,
+        stack: list[Path],
+    ) -> Path | None:
+        """按链接、目录、文件顺序分类一个目录项并执行原有审计动作。"""
+
+        if self._entry_is_link(entry) and not options.follow_links:
+            self.database.record_error(
+                scan_id,
+                relative,
+                "REPARSE_POINT",
+                "默认不跟随符号链接或 Windows 重解析点。",
+            )
+            return None
+        if entry.is_dir(follow_symlinks=options.follow_links):
+            if self._excluded_directory(relative, options):
+                return None
+            key, parent_key = self._directory_keys(relative)
+            directory_stat = entry.stat(follow_symlinks=options.follow_links)
+            self.database.record_directory(
+                scan_id,
+                relative,
+                key,
+                parent_key,
+                created_time=timestamp_to_utc(directory_stat.st_ctime_ns),
+                modified_time=timestamp_to_utc(directory_stat.st_mtime_ns),
+            )
+            stack.append(path)
+            return None
+        if entry.is_file(follow_symlinks=options.follow_links) and not self._excluded_file(
+            path, options
+        ):
+            return path
+        return None
+
+    def _record_entry_error(self, scan_id: str, relative: str, exc: OSError) -> None:
+        """按稳定错误分类记录一个目录项访问异常。"""
+
+        self.database.record_error(
+            scan_id, relative, self._error_code(exc, ErrorCode.ENTRY_ERROR), str(exc)
+        )
+
+    def _record_directory_error(self, scan_id: str, relative: str, exc: OSError) -> None:
+        """保持目录记录先于错误审计的失败写入顺序。"""
+
+        self.database.record_directory(
+            scan_id, relative, normalized_path_key(relative), None, str(exc)
+        )
+        self._record_entry_error(scan_id, relative, exc)
+
+    @staticmethod
+    def _directory_target_key(directory: Path) -> tuple[int, int]:
+        """返回跟随链接后的设备与 inode 标识，用于阻止遍历环。"""
+
+        target_stat = os.stat(_filesystem_path(directory), follow_symlinks=True)
+        return target_stat.st_dev, target_stat.st_ino
+
+    @staticmethod
+    def _directory_relative_path(directory: Path, root: Path) -> str:
+        """把遍历根目录规范化为空相对路径。"""
+
+        return relative_display_path(directory, root) if directory != root else ""
+
+    @staticmethod
+    def _directory_keys(relative: str) -> tuple[str, str]:
+        """由相对目录路径推导自身与父目录比较键。"""
+
+        parent = Path(relative).parent.as_posix()
+        parent_key = normalized_path_key(parent) if parent != "." else ""
+        return normalized_path_key(relative), parent_key
+
+    def _entry_is_link(self, entry: os.DirEntry[str]) -> bool:
+        """统一识别符号链接和 Windows 重解析点。"""
+
+        return entry.is_symlink() or self._is_reparse_point(entry)
 
     @staticmethod
     def _is_reparse_path(path: Path) -> bool:
@@ -534,92 +588,135 @@ class Scanner:
             try:
                 before = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                 hash_algorithm = options.effective_hash_algorithm(before.st_size)
-                if options.hash_mode is HashMode.SAMPLED:
-                    try:
-                        sampled_result = sampled_sha256(
-                            _filesystem_path(path),
-                            sample_budget=options.sample_budget,
-                            sample_count=options.sample_count,
-                        )
-                    except FileChangedDuringHashError:
-                        base = self._base_file_result(
-                            relative_path, path_key, path.name, extension, before, attempt
-                        )
-                        last_result = {
-                            **base,
-                            "hash_algorithm": hash_algorithm,
-                            "hash_status": HashStatus.UNSTABLE,
-                            "error_code": "CHANGED_DURING_HASH",
-                            "error_message": "文件在 Hash 计算期间发生变化。",
-                        }
-                        continue
-                    sha256_digest = sampled_result["digest"].upper()
-                    sha512_digest = None
-                else:
-                    sha256 = hashlib.sha256()
-                    sha512 = hashlib.sha512() if options.sha512 else None
-                    with open(_filesystem_path(path), "rb", buffering=0) as handle:
-                        while block := handle.read(options.chunk_size):
-                            sha256.update(block)
-                            if sha512 is not None:
-                                sha512.update(block)
-                    sha256_digest = sha256.hexdigest().upper()
-                    sha512_digest = sha512.hexdigest().upper() if sha512 is not None else None
+                try:
+                    digests = self._read_hash_attempt(path, options)
+                except FileChangedDuringHashError:
+                    base = self._base_file_result(
+                        relative_path, path_key, path.name, extension, before, attempt
+                    )
+                    last_result = self._unstable_file_result(base, hash_algorithm)
+                    continue
                 after = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
                 base = self._base_file_result(
                     relative_path, path_key, path.name, extension, before, attempt
                 )
-                if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
-                    last_result = {
-                        **base,
-                        "hash_algorithm": hash_algorithm,
-                        "hash_status": HashStatus.UNSTABLE,
-                        "error_code": "CHANGED_DURING_HASH",
-                        "error_message": "文件在 Hash 计算期间发生变化。",
-                    }
+                if not self._file_metadata_is_stable(before, after):
+                    last_result = self._unstable_file_result(base, hash_algorithm)
                     continue
-                return {
-                    **base,
-                    "sha256": sha256_digest,
-                    "sha512": sha512_digest,
-                    "hash_algorithm": hash_algorithm,
-                    "hash_status": HashStatus.OK,
-                    "error_code": None,
-                    "error_message": None,
-                    "hashed_at": utc_now(),
-                }
+                return self._successful_file_result(base, digests, hash_algorithm)
             except OSError as exc:
-                try:
-                    stat = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
-                    base = self._base_file_result(
-                        relative_path, path_key, path.name, extension, stat, attempt
-                    )
-                    hash_algorithm = options.effective_hash_algorithm(stat.st_size)
-                except OSError:
-                    base = {
-                        "relative_path": relative_path,
-                        "path_key": path_key,
-                        "name": path.name,
-                        "extension": extension,
-                        "size_bytes": None,
-                        "created_time": None,
-                        "modified_time": None,
-                        "mtime_ns": None,
-                        "attempt_count": attempt,
-                    }
-                    hash_algorithm = options.requested_hash_algorithm()
-                return {
-                    **base,
-                    "sha256": None,
-                    "sha512": None,
-                    "hash_algorithm": hash_algorithm,
-                    "hash_status": HashStatus.ERROR,
-                    "error_code": self._error_code(exc, ErrorCode.READ_ERROR),
-                    "error_message": str(exc),
-                    "hashed_at": utc_now(),
-                }
+                return self._read_error_result(
+                    path,
+                    relative_path,
+                    path_key,
+                    extension,
+                    attempt,
+                    options,
+                    exc,
+                )
         assert last_result is not None
         return {**last_result, "sha256": None, "sha512": None, "hashed_at": utc_now()}
+
+    @staticmethod
+    def _read_hash_attempt(path: Path, options: ScanOptions) -> _HashDigests:
+        """按当前策略完成一次文件读取，不负责重试或稳定性结论。"""
+
+        if options.hash_mode is HashMode.SAMPLED:
+            sampled_result = sampled_sha256(
+                _filesystem_path(path),
+                sample_target_bytes=options.sample_target_bytes,
+                sample_count=options.sample_count,
+            )
+            return _HashDigests(str(sampled_result["digest"]).upper(), None)
+
+        sha256 = hashlib.sha256()
+        sha512 = hashlib.sha512() if options.sha512 else None
+        with open(_filesystem_path(path), "rb", buffering=0) as handle:
+            while block := handle.read(options.chunk_size):
+                sha256.update(block)
+                if sha512 is not None:
+                    sha512.update(block)
+        return _HashDigests(
+            sha256.hexdigest().upper(),
+            sha512.hexdigest().upper() if sha512 is not None else None,
+        )
+
+    @staticmethod
+    def _file_metadata_is_stable(before: os.stat_result, after: os.stat_result) -> bool:
+        """按原有大小与纳秒修改时间规则判断读取期间是否稳定。"""
+
+        return before.st_size == after.st_size and before.st_mtime_ns == after.st_mtime_ns
+
+    @staticmethod
+    def _unstable_file_result(base: dict[str, object], hash_algorithm: str) -> dict[str, object]:
+        """组装需要继续重试的不稳定文件结果。"""
+
+        return {
+            **base,
+            "hash_algorithm": hash_algorithm,
+            "hash_status": HashStatus.UNSTABLE,
+            "error_code": "CHANGED_DURING_HASH",
+            "error_message": "文件在 Hash 计算期间发生变化。",
+        }
+
+    @staticmethod
+    def _successful_file_result(
+        base: dict[str, object], digests: _HashDigests, hash_algorithm: str
+    ) -> dict[str, object]:
+        """组装摘要可信的成功文件结果。"""
+
+        return {
+            **base,
+            "sha256": digests.sha256,
+            "sha512": digests.sha512,
+            "hash_algorithm": hash_algorithm,
+            "hash_status": HashStatus.OK,
+            "error_code": None,
+            "error_message": None,
+            "hashed_at": utc_now(),
+        }
+
+    def _read_error_result(
+        self,
+        path: Path,
+        relative_path: str,
+        path_key: str,
+        extension: str,
+        attempt: int,
+        options: ScanOptions,
+        exc: OSError,
+    ) -> dict[str, object]:
+        """尽量补取文件元数据并组装一次读取错误结果。"""
+
+        try:
+            stat = os.stat(_filesystem_path(path), follow_symlinks=options.follow_links)
+            base = self._base_file_result(
+                relative_path, path_key, path.name, extension, stat, attempt
+            )
+            hash_algorithm = options.effective_hash_algorithm(stat.st_size)
+        except OSError:
+            base = {
+                "relative_path": relative_path,
+                "path_key": path_key,
+                "name": path.name,
+                "extension": extension,
+                "size_bytes": None,
+                "created_time": None,
+                "modified_time": None,
+                "mtime_ns": None,
+                "attempt_count": attempt,
+            }
+            hash_algorithm = options.requested_hash_algorithm()
+        return {
+            **base,
+            "sha256": None,
+            "sha512": None,
+            "hash_algorithm": hash_algorithm,
+            "hash_status": HashStatus.ERROR,
+            "error_code": self._error_code(exc, ErrorCode.READ_ERROR),
+            "error_message": str(exc),
+            "hashed_at": utc_now(),
+        }
 
     @staticmethod
     def _error_code(exc: OSError, fallback: ErrorCode) -> ErrorCode:

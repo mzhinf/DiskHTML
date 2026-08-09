@@ -73,7 +73,7 @@ class UiTests(TestCase):
         self.window._snapshot_output_var.set("D:/snapshot.html")
         self.window._snapshot_follow_var.set(True)
         self.window._snapshot_hash_mode_var.set(HashMode.SAMPLED.value)
-        self.window._snapshot_sample_budget_mb_var.set("16")
+        self.window._snapshot_sample_target_mb_var.set("16")
         self.window._snapshot_sample_count_var.set("12")
         self.window._tabs.select(1)
         self.window._language_selector.current(self.window._language_codes.index("en"))
@@ -87,7 +87,7 @@ class UiTests(TestCase):
         self.assertEqual("D:/snapshot.html", self.window._snapshot_output_var.get())
         self.assertTrue(self.window._snapshot_follow_var.get())
         self.assertEqual(HashMode.SAMPLED.value, self.window._snapshot_hash_mode_var.get())
-        self.assertEqual("16", self.window._snapshot_sample_budget_mb_var.get())
+        self.assertEqual("16", self.window._snapshot_sample_target_mb_var.get())
         self.assertEqual("12", self.window._snapshot_sample_count_var.get())
         self.assertEqual("Language", self.window._language_label.cget("text"))
 
@@ -108,7 +108,7 @@ class UiTests(TestCase):
             self.assertEqual("pack", label.winfo_manager())
 
     def test_sampled_controls_show_warning_and_validate_parameters(self) -> None:
-        """采样配置仅在采样模式显示，并阻止无效预算进入任务。"""
+        """采样配置仅在采样模式显示，并阻止无效目标读取量进入任务。"""
 
         self.assertEqual("", self.window._snapshot_sample_frame.winfo_manager())
         self.window._snapshot_hash_mode_var.set(HashMode.SAMPLED.value)
@@ -122,7 +122,7 @@ class UiTests(TestCase):
             source.mkdir()
             self.window._snapshot_source_var.set(str(source))
             self.window._snapshot_output_var.set(str(root / "snapshot.html"))
-            self.window._snapshot_sample_budget_mb_var.set("0")
+            self.window._snapshot_sample_target_mb_var.set("0")
             self.window._start_snapshot_from_page()
 
         self.assertTrue(self.window._snapshot_hash_error.cget("text"))
@@ -154,7 +154,7 @@ class UiTests(TestCase):
             self.window._snapshot_output_var.set(str(output))
             self.window._snapshot_follow_var.set(True)
             self.window._snapshot_hash_mode_var.set(HashMode.SAMPLED.value)
-            self.window._snapshot_sample_budget_mb_var.set("16")
+            self.window._snapshot_sample_target_mb_var.set("16")
             self.window._snapshot_sample_count_var.set("4")
             with patch("diskhtml.ui.HtmlSnapshotThread") as task_class:
                 task = task_class.return_value
@@ -166,7 +166,7 @@ class UiTests(TestCase):
             self.assertEqual((source, output), args[:2])
             self.assertTrue(args[2].follow_links)
             self.assertEqual(HashMode.SAMPLED, args[2].hash_mode)
-            self.assertEqual(16 * 1024 * 1024, args[2].sample_budget)
+            self.assertEqual(16 * 1024 * 1024, args[2].sample_target_bytes)
             self.assertEqual(4, args[2].sample_count)
             task.start.assert_called_once_with()
             self.assertEqual("pack", self.window._run_panel.winfo_manager())
