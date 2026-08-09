@@ -6,17 +6,25 @@ level = "INFO"
 json = false
 
 [scan]
-workers = 2
+# Hash 工作线程数；值越大 CPU 占用越高，受限于物理核心数。
+workers = 4
+# 有界任务队列大小；队列填满后生产者会阻塞，避免内存无界增长。
 queue_size = 32
+# 单次读取字节数；越大单次系统调用越重，吞吐通常更高，内存占用也会增大。
 chunk_size = 4194304
-exclude_dirs = ["System Volume Information", "$RECYCLE.BIN"]
-exclude_extensions = [".tmp", ".part"]
+# 跳过匹配的目录（fnmatch 或路径段包含）；默认已排除回收站与系统卷。
+exclude_dirs = ["$RECYCLE.BIN", "RECYCLE.BIN", "System Volume Information", "Config.Msi", "Recovery"]
+# 跳过指定后缀的文件（不带点也允许，内部会补 "."）。
+exclude_extensions = []
+# 是否额外计算 SHA-512；true 时会拖慢扫描并把哈希字段写入 SQLite。
 sha512 = false
-# full 计算完整 SHA-256；sampled 仅对超过目标读取量的文件生成快速预检采样指纹。
+# Hash 模式：full（完整 SHA-256）或 sampled（超过目标读取量的文件生成快速预检采样指纹）。
 hash_mode = "full"
 # 目标采样读取量，单位为字节；实际读取量可能因数据块向上取整而略高。
 sample_target_bytes = 8388608
 # 固定采样次数；采样点从文件头到文件尾均匀分布。
 sample_count = 8
+# 是否跟随软链接与 Windows 重解析点；true 可能造成循环引用，请谨慎开启。
 follow_links = false
+# Hash 失败后的重试次数；0 表示不重试。
 retry_count = 1

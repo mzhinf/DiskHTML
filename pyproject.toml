@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diskhtml"
-version = "1.1.0"
+version = "1.1.1"
 description = "Windows 文件 Hash 快照与离线 HTML 比对工具"
 readme = "README.md"
 license = "MIT"
